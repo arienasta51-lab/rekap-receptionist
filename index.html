@@ -1,0 +1,2082 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReceptionistDesk - Menara Karya Multi-Floor & Weekly Report (Supabase)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Supabase JS Client UMD -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f7ff',
+                            100: '#e0effe',
+                            500: '#2563eb',
+                            600: '#1d4ed8',
+                            700: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white !important; color: black !important; }
+            .shadow-card { box-shadow: none !important; border: 1px solid #e5e7eb !important; }
+        }
+        .print-only { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
+
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 no-print shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- App Logo & Title -->
+                <div class="flex items-center space-x-3">
+                    <div class="w-10 h-10 rounded-xl bg-brand-600 text-white flex items-center justify-center font-bold text-xl shadow-md shadow-brand-500/20">
+                        <i class="fa-solid fa-concierge-bell"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <h1 class="font-bold text-slate-900 text-lg leading-tight">Receptionist</h1>
+                            <span class="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Menara Karya</span>
+                        </div>
+                        <p class="text-xs text-slate-500 hidden sm:block">Sistem Laporan Harian & Buku Tamu (Supabase Cloud)</p>
+                    </div>
+                </div>
+
+                <!-- Shift, Floor Selector & Header Info -->
+                <div class="flex items-center space-x-3">
+                    <div class="hidden lg:flex flex-col text-right">
+                        <span id="current-date-display" class="text-xs font-semibold text-slate-700"></span>
+                        <span id="clock-display" class="text-xs text-brand-600 font-mono font-medium">--:--:--</span>
+                    </div>
+
+                    <div class="h-8 w-px bg-slate-200 hidden lg:block"></div>
+
+                    <!-- ACTIVE FLOOR SELECTOR (MENARA KARYA) -->
+                    <div class="bg-slate-100 border border-slate-200 p-1.5 rounded-lg flex items-center space-x-2 text-xs">
+                        <i class="fa-solid fa-building text-brand-600"></i>
+                        <div>
+                            <span class="text-[10px] text-slate-400 block leading-none">Lantai Aktif:</span>
+                            <select id="header-floor-select" onchange="changeActiveFloor(this.value)" class="bg-transparent font-bold text-slate-800 focus:outline-none text-xs cursor-pointer">
+                                <option value="ALL">Semua Lantai (Global)</option>
+                                <option value="Lantai 18 Menara Karya">Lantai 18 Menara Karya</option>
+                                <option value="Lantai 27 Menara Karya">Lantai 27 Menara Karya</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Shift Info Badge -->
+                    <div class="bg-slate-100 p-1.5 rounded-lg flex items-center space-x-2 text-xs">
+                        <i class="fa-regular fa-user-circle text-slate-500 text-base"></i>
+                        <div class="text-left hidden sm:block">
+                            <span id="officer-name-display" class="font-medium text-slate-800 block leading-none">Petugas FO</span>
+                            <span id="shift-display" class="text-[10px] text-slate-500 block">Shift Pagi</span>
+                        </div>
+                        <button onclick="openSettingsModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded" title="Pengaturan Shift & Petugas">
+                            <i class="fa-solid fa-gear"></i>
+                        </button>
+                    </div>
+
+                    <!-- Cloud Status Badge -->
+                    <div id="cloud-status-badge" class="flex items-center space-x-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-1 rounded-lg text-xs font-medium">
+                        <span id="cloud-status-dot" class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span id="cloud-status-text" class="text-[11px]">Supabase Connected</span>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="flex items-center space-x-1.5">
+                        <button onclick="exportDataCSV()" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-medium px-2.5 py-2 rounded-lg transition-colors flex items-center space-x-1" title="Ekspor ke Excel / CSV">
+                            <i class="fa-solid fa-file-excel text-emerald-600"></i>
+                            <span class="hidden md:inline">Excel</span>
+                        </button>
+                        <button onclick="exportDataJSON()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-medium px-2.5 py-2 rounded-lg transition-colors flex items-center space-x-1" title="Backup File JSON">
+                            <i class="fa-solid fa-download text-slate-500"></i>
+                            <span class="hidden md:inline">Backup</span>
+                        </button>
+                    </div>
+
+                    <!-- Print / View Report Button -->
+                    <button onclick="switchTab('report')" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium px-3 py-2 rounded-lg transition-colors flex items-center space-x-1.5 shadow-sm">
+                        <i class="fa-solid fa-file-invoice"></i>
+                        <span class="hidden sm:inline">Laporan Harian</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- Active Floor Banner Indicator -->
+        <div id="floor-filter-banner" class="mb-4 bg-brand-50 border border-brand-200 p-3 rounded-xl flex justify-between items-center no-print">
+            <div class="flex items-center space-x-2 text-xs text-brand-900">
+                <i class="fa-solid fa-filter text-brand-600"></i>
+                <span>Menampilkan Data untuk: <strong id="banner-floor-name" class="font-bold underline">Semua Lantai (Global)</strong></span>
+            </div>
+            <button onclick="changeActiveFloor('ALL')" id="btn-reset-floor-filter" class="hidden text-[11px] text-brand-700 hover:text-brand-900 font-semibold underline">
+                Lihat Semua Lantai
+            </button>
+        </div>
+
+        <!-- Top Overview Metric Cards -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 no-print">
+            <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl shrink-0">
+                    <i class="fa-solid fa-phone-volume"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500">Telepon Masuk</p>
+                    <h3 id="stat-calls" class="text-2xl font-bold text-slate-800">0</h3>
+                    <p id="stat-calls-sub" class="text-[11px] text-slate-400">0 butuh tindak lanjut</p>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl shrink-0">
+                    <i class="fa-solid fa-users"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500">Total Tamu</p>
+                    <h3 id="stat-visitors" class="text-2xl font-bold text-slate-800">0</h3>
+                    <p id="stat-visitors-sub" class="text-[11px] text-emerald-600 font-medium">0 sedang bertamu</p>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl shrink-0">
+                    <i class="fa-solid fa-door-open"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500">Ruang Meeting</p>
+                    <h3 id="stat-meetings" class="text-2xl font-bold text-slate-800">0</h3>
+                    <p id="stat-meetings-sub" class="text-[11px] text-slate-400">Reservasi Terdaftar</p>
+                </div>
+            </div>
+
+            <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex items-center space-x-4">
+                <div class="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shrink-0">
+                    <i class="fa-solid fa-van-shuttle"></i>
+                </div>
+                <div>
+                    <p class="text-xs font-medium text-slate-500">Mobil Shuttle</p>
+                    <h3 id="stat-notes" class="text-2xl font-bold text-slate-800">0 Trip</h3>
+                    <p id="stat-notes-sub" class="text-[11px] text-amber-600 font-semibold">0 Total Penumpang</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs Bar -->
+        <div class="flex items-center justify-between border-b border-slate-200 mb-6 overflow-x-auto no-print">
+            <nav class="flex space-x-2 sm:space-x-4 min-w-max">
+                <button onclick="switchTab('phone')" id="tab-btn-phone" class="tab-btn flex items-center space-x-2 py-3 px-4 text-sm font-semibold border-b-2 border-brand-600 text-brand-600 transition-all">
+                    <i class="fa-solid fa-phone"></i>
+                    <span>Log Telepon</span>
+                    <span id="badge-calls" class="ml-1 px-2 py-0.5 text-xs bg-brand-100 text-brand-700 rounded-full">0</span>
+                </button>
+
+                <button onclick="switchTab('visitors')" id="tab-btn-visitors" class="tab-btn flex items-center space-x-2 py-3 px-4 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-all">
+                    <i class="fa-solid fa-address-book"></i>
+                    <span>Buku Tamu</span>
+                    <span id="badge-visitors" class="ml-1 px-2 py-0.5 text-xs bg-slate-100 text-slate-600 rounded-full">0</span>
+                </button>
+
+                <button onclick="switchTab('meetings')" id="tab-btn-meetings" class="tab-btn flex items-center space-x-2 py-3 px-4 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-all">
+                    <i class="fa-solid fa-calendar-days"></i>
+                    <span>Ruang Meeting</span>
+                    <span id="badge-meetings" class="ml-1 px-2 py-0.5 text-xs bg-slate-100 text-slate-600 rounded-full">0</span>
+                </button>
+
+                <button onclick="switchTab('notes')" id="tab-btn-notes" class="tab-btn flex items-center space-x-2 py-3 px-4 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-all">
+                    <i class="fa-solid fa-van-shuttle"></i>
+                    <span>Mobil Shuttle</span>
+                    <span id="badge-notes" class="ml-1 px-2 py-0.5 text-xs bg-slate-100 text-slate-600 rounded-full">0</span>
+                </button>
+
+                <button onclick="switchTab('history')" id="tab-btn-history" class="tab-btn flex items-center space-x-2 py-3 px-4 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-all">
+                    <i class="fa-solid fa-box-archive"></i>
+                    <span>Arsip Laporan</span>
+                    <span id="badge-history" class="ml-1 px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full">0</span>
+                </button>
+
+                <button onclick="switchTab('weekly')" id="tab-btn-weekly" class="tab-btn flex items-center space-x-2 py-3 px-4 text-sm font-medium border-b-2 border-transparent text-amber-600 hover:text-amber-700 transition-all">
+                    <i class="fa-solid fa-chart-line text-amber-500"></i>
+                    <span class="font-bold">Laporan Mingguan</span>
+                    <span class="ml-1 px-2 py-0.5 text-xs bg-amber-100 text-amber-800 rounded-full font-bold">+</span>
+                </button>
+
+                <button onclick="switchTab('report')" id="tab-btn-report" class="tab-btn flex items-center space-x-2 py-3 px-4 text-sm font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 transition-all">
+                    <i class="fa-solid fa-print"></i>
+                    <span>Rekap Laporan</span>
+                </button>
+            </nav>
+        </div>
+
+        <!-- PHONE TAB -->
+        <section id="tab-content-phone" class="tab-content space-y-4">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200">
+                <div class="relative w-full sm:w-72">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
+                    <input type="text" id="search-phone" oninput="renderPhoneLogs()" placeholder="Cari nama, pemanggil, pesan..." class="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-brand-500">
+                </div>
+                <button onclick="openPhoneModal()" class="w-full sm:w-auto bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-all shadow-sm">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Tambah Panggilan</span>
+                </button>
+            </div>
+
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                            <tr>
+                                <th class="p-3.5">Waktu</th>
+                                <th class="p-3.5">Lantai Ops</th>
+                                <th class="p-3.5">Arah</th>
+                                <th class="p-3.5">Pemanggil / Kontak</th>
+                                <th class="p-3.5">Instansi</th>
+                                <th class="p-3.5">Ditujukan Kepada</th>
+                                <th class="p-3.5">Maksud / Pesan</th>
+                                <th class="p-3.5">Status</th>
+                                <th class="p-3.5 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="phone-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- VISITORS TAB -->
+        <section id="tab-content-visitors" class="tab-content space-y-4 hidden">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200">
+                <div class="relative w-full sm:w-72">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
+                    <input type="text" id="search-visitor" oninput="renderVisitorLogs()" placeholder="Cari nama tamu, instansi, host..." class="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-brand-500">
+                </div>
+                <button onclick="openVisitorModal()" class="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-all shadow-sm">
+                    <i class="fa-solid fa-user-plus"></i>
+                    <span>Catat Tamu Masuk</span>
+                </button>
+            </div>
+
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                            <tr>
+                                <th class="p-3.5">Masuk - Keluar</th>
+                                <th class="p-3.5">Rute Lantai</th>
+                                <th class="p-3.5">Nama Tamu</th>
+                                <th class="p-3.5">Instansi</th>
+                                <th class="p-3.5">Orang Ditemui</th>
+                                <th class="p-3.5">Tujuan Kunjungan</th>
+                                <th class="p-3.5">No. Badge</th>
+                                <th class="p-3.5">Status Transit</th>
+                                <th class="p-3.5 text-right">Aksi / Kontrol</th>
+                            </tr>
+                        </thead>
+                        <tbody id="visitor-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- MEETINGS TAB -->
+        <section id="tab-content-meetings" class="tab-content space-y-4 hidden">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-800">Jadwal Ruang Meeting Menara Karya</h3>
+                    <p class="text-xs text-slate-500">Reservasi penggunaan ruang rapat di Lantai 18 & Lantai 27 Menara Karya berdasarkan tanggal.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    <div class="flex items-center space-x-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg text-xs w-full sm:w-auto">
+                        <i class="fa-solid fa-calendar text-purple-600"></i>
+                        <span class="font-medium text-slate-600">Tanggal Booking:</span>
+                        <input type="date" id="filter-meeting-date" onchange="renderMeetingLogs()" class="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer">
+                    </div>
+                    <button onclick="openMeetingModal()" class="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-all shadow-sm w-full sm:w-auto">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Tambah Reservasi</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                    <span id="meeting-list-title" class="text-xs font-bold text-slate-700 uppercase tracking-wider">Daftar Reservasi Tanggal Ini</span>
+                    <button onclick="resetMeetingDateFilter()" class="text-xs text-purple-700 hover:text-purple-900 font-semibold underline">Tampilkan Semua Tanggal</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-100 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                            <tr>
+                                <th class="p-3.5">Tanggal</th>
+                                <th class="p-3.5">Waktu</th>
+                                <th class="p-3.5">Lantai</th>
+                                <th class="p-3.5">Ruang Meeting</th>
+                                <th class="p-3.5">Agenda / Topik</th>
+                                <th class="p-3.5">Divisi / Host</th>
+                                <th class="p-3.5">F&B / Catatan</th>
+                                <th class="p-3.5 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="meetings-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- SHUTTLE TAB -->
+        <section id="tab-content-notes" class="tab-content space-y-4 hidden">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-xl border border-slate-200">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-800">Penggunaan Mobil Shuttle Operasional</h3>
+                    <p class="text-xs text-slate-500">Pencatatan rute, armada mobil, driver, tanggal, dan penumpang shuttle.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    <div class="flex items-center space-x-2 bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg text-xs w-full sm:w-auto">
+                        <i class="fa-solid fa-calendar text-amber-600"></i>
+                        <span class="font-medium text-slate-600">Filter Tanggal:</span>
+                        <input type="date" id="filter-shuttle-date" onchange="renderNotes()" class="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer">
+                    </div>
+                    <button onclick="openNoteModal()" class="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg flex items-center justify-center space-x-2 transition-all shadow-sm">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Catat Pengguna Shuttle</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-medium text-slate-500">Total Perjalanan (Trip)</p>
+                        <h4 id="shuttle-summary-trips" class="text-lg font-bold text-slate-800">0 Trip</h4>
+                    </div>
+                    <div class="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-route"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white p-3.5 rounded-xl border border-amber-200 bg-amber-50/30 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-medium text-amber-700">Total Penumpang</p>
+                        <h4 id="shuttle-summary-passengers" class="text-lg font-bold text-amber-700">0 Orang</h4>
+                    </div>
+                    <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-users text-base"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+                    <div>
+                        <p class="text-[11px] font-medium text-slate-500">Rata-Rata Penumpang / Trip</p>
+                        <h4 id="shuttle-summary-avg" class="text-lg font-bold text-slate-800">0 Orang</h4>
+                    </div>
+                    <div class="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-sm">
+                        <i class="fa-solid fa-calculator"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                    <span id="shuttle-list-title" class="text-xs font-bold text-slate-700 uppercase tracking-wider">Daftar Penggunaan Shuttle</span>
+                    <button onclick="resetShuttleDateFilter()" class="text-xs text-amber-700 hover:text-amber-900 font-semibold underline">Tampilkan Semua Tanggal</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                            <tr>
+                                <th class="p-3.5">Tanggal</th>
+                                <th class="p-3.5">Waktu</th>
+                                <th class="p-3.5">Pemesan</th>
+                                <th class="p-3.5">Nama Penumpang</th>
+                                <th class="p-3.5 text-center">Jml Penumpang</th>
+                                <th class="p-3.5">Divisi</th>
+                                <th class="p-3.5">Unit Mobil / Driver</th>
+                                <th class="p-3.5">Tujuan / Rute</th>
+                                <th class="p-3.5">Status</th>
+                                <th class="p-3.5 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="notes-grid" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- HISTORY TAB -->
+        <section id="tab-content-history" class="tab-content space-y-4 hidden">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 rounded-xl border border-slate-200">
+                <div>
+                    <h3 class="text-sm font-bold text-slate-800">Arsip & Riwayat Laporan Harian</h3>
+                    <p class="text-xs text-slate-500">Kumpulan laporan harian resepsionis tersimpan di Supabase.</p>
+                </div>
+                <div class="relative w-full sm:w-64">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-xs"></i>
+                    <input type="text" id="search-history" oninput="renderHistoryTable()" placeholder="Cari tanggal, petugas, lantai..." class="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-brand-500">
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                            <tr>
+                                <th class="p-3.5">Tanggal Laporan</th>
+                                <th class="p-3.5">Lantai</th>
+                                <th class="p-3.5">Petugas FO</th>
+                                <th class="p-3.5">Shift Kerja</th>
+                                <th class="p-3.5 text-center">Ringkasan Aktivitas</th>
+                                <th class="p-3.5">Waktu Arsip</th>
+                                <th class="p-3.5 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- WEEKLY REPORT TAB -->
+        <section id="tab-content-weekly" class="tab-content space-y-6 hidden">
+            <div class="bg-gradient-to-r from-amber-600 to-amber-700 text-white p-6 rounded-2xl shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <span class="bg-amber-800/60 text-amber-100 text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider">Adaro Persada Mandiri</span>
+                    <h2 class="text-xl font-bold mt-1">Rekapitulasi Laporan Mingguan Resepsionis Menara Karya</h2>
+                    <p class="text-xs text-amber-100 mt-1">Analisis akumulasi data harian, tren kunjungan tamu, volume telepon, serta utilisasi fasilitas gedung.</p>
+                </div>
+                <div class="flex items-center space-x-2 shrink-0">
+                    <button onclick="exportWeeklyReportExcel()" class="bg-white hover:bg-amber-50 text-amber-900 text-xs font-semibold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2">
+                        <i class="fa-solid fa-file-excel text-emerald-600"></i>
+                        <span>Ekspor Excel Mingguan</span>
+                    </button>
+                    <button onclick="window.print()" class="bg-amber-900 hover:bg-amber-950 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow transition-all flex items-center space-x-2">
+                        <i class="fa-solid fa-print"></i>
+                        <span>Cetak Laporan</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <p class="text-xs font-medium text-slate-500">Total Tamu (Mingguan)</p>
+                    <h3 id="weekly-stat-visitors" class="text-2xl font-bold text-slate-800 mt-1">0</h3>
+                    <p class="text-[11px] text-emerald-600 mt-1"><i class="fa-solid fa-arrow-trend-up mr-1"></i> Akumulasi arsip</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <p class="text-xs font-medium text-slate-500">Total Telepon</p>
+                    <h3 id="weekly-stat-calls" class="text-2xl font-bold text-slate-800 mt-1">0</h3>
+                    <p class="text-[11px] text-blue-600 mt-1"><i class="fa-solid fa-phone mr-1"></i> Panggilan tercatat</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <p class="text-xs font-medium text-slate-500">Reservasi Ruang Meeting</p>
+                    <h3 id="weekly-stat-meetings" class="text-2xl font-bold text-slate-800 mt-1">0</h3>
+                    <p class="text-[11px] text-purple-600 mt-1"><i class="fa-solid fa-door-open mr-1"></i> Sesi rapat</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <p class="text-xs font-medium text-slate-500">Total Penumpang Shuttle</p>
+                    <h3 id="weekly-stat-shuttle" class="text-2xl font-bold text-slate-800 mt-1">0</h3>
+                    <p class="text-[11px] text-amber-600 mt-1"><i class="fa-solid fa-van-shuttle mr-1"></i> Dari seluruh trip</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h3 class="text-sm font-bold text-slate-800 mb-1">Grafik Tren Kunjungan Tamu Mingguan</h3>
+                    <p class="text-xs text-slate-500 mb-4">Perbandingan jumlah tamu berdasarkan arsip laporan.</p>
+                    <div class="h-64 relative">
+                        <canvas id="weeklyVisitorChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+                    <h3 class="text-sm font-bold text-slate-800 mb-1">Distribusi Aktivitas Fasilitas</h3>
+                    <p class="text-xs text-slate-500 mb-4">Komposisi total aktivitas resepsionis.</p>
+                    <div class="h-64 relative flex justify-center">
+                        <canvas id="weeklyActivityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-4 border-b border-slate-200 flex justify-between items-center">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-800">Rincian Arsip Harian</h3>
+                        <p class="text-xs text-slate-500">Daftar laporan harian dalam sistem.</p>
+                    </div>
+                    <span id="weekly-archive-count" class="text-xs bg-slate-100 text-slate-700 px-2.5 py-1 rounded-lg font-semibold">0 Hari Terarsip</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold uppercase tracking-wider">
+                            <tr>
+                                <th class="p-3.5">Hari / Tanggal Arsip</th>
+                                <th class="p-3.5">Petugas FO</th>
+                                <th class="p-3.5 text-center">Log Telepon</th>
+                                <th class="p-3.5 text-center">Buku Tamu</th>
+                                <th class="p-3.5 text-center">Meeting</th>
+                                <th class="p-3.5 text-center">Shuttle Trip (Pax)</th>
+                                <th class="p-3.5 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="weekly-table-body" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-3">
+                <h3 class="text-sm font-bold text-slate-800 flex items-center space-x-2">
+                    <i class="fa-solid fa-clipboard-list text-brand-600"></i>
+                    <span>Catatan & Evaluasi Operasional Mingguan (Executive Summary)</span>
+                </h3>
+                <textarea id="weekly-executive-notes" rows="3" placeholder="Tuliskan catatan penting operasional resepsionis minggu ini..." class="w-full p-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-brand-500"></textarea>
+                <div class="flex justify-end">
+                    <button onclick="saveWeeklyNotes()" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-all">
+                        Simpan Catatan Eksekutif
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- REPORT / PRINT TAB -->
+        <section id="tab-content-report" class="tab-content space-y-6 hidden">
+            <div class="no-print bg-amber-50 border border-amber-200 p-4 rounded-xl flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center space-x-3 text-amber-800 text-xs">
+                    <i class="fa-solid fa-circle-info text-amber-600 text-base"></i>
+                    <span>Pratinjau Laporan Harian Resepsionis Menara Karya siap dicetak atau diarsipkan ke Supabase.</span>
+                </div>
+                <div class="flex items-center space-x-2 flex-wrap gap-2">
+                    <button onclick="archiveCurrentDay()" class="bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg flex items-center space-x-1.5 shadow-sm transition-all">
+                        <i class="fa-solid fa-box-archive"></i>
+                        <span>Simpan & Arsipkan Hari Ini</span>
+                    </button>
+                    <button onclick="exportDataCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center space-x-1.5 shadow-sm transition-all">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span>Ekspor Excel</span>
+                    </button>
+                    <button onclick="window.print()" class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center space-x-2 shadow-sm transition-all">
+                        <i class="fa-solid fa-print"></i>
+                        <span>Cetak / PDF</span>
+                    </button>
+                    <button onclick="openResetModal()" class="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-semibold px-3 py-2 rounded-lg flex items-center space-x-1 transition-all" title="Reset data harian">
+                        <i class="fa-solid fa-rotate-right"></i>
+                        <span>Mulai Hari Baru</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white p-8 rounded-xl border border-slate-200 shadow-md max-w-4xl mx-auto print-container space-y-6">
+                <div class="border-b-2 border-slate-800 pb-4 flex justify-between items-end">
+                    <div>
+                        <h1 class="text-2xl font-bold text-slate-900 tracking-wide uppercase">LAPORAN HARIAN RESEPSIONIS</h1>
+                        <p class="text-xs text-slate-500 mt-1">Gedung Menara Karya - Adaro Persada Mandiri</p>
+                    </div>
+                    <div class="text-right text-xs text-slate-700 space-y-1">
+                        <p><span class="font-semibold">Tanggal:</span> <span id="rpt-date">--</span></p>
+                        <p><span class="font-semibold">Lokasi:</span> <span id="rpt-floor" class="font-bold text-brand-700">--</span></p>
+                        <p><span class="font-semibold">Petugas:</span> <span id="rpt-officer">--</span></p>
+                        <p><span class="font-semibold">Shift:</span> <span id="rpt-shift">--</span></p>
+                    </div>
+                </div>
+
+                <div>
+                    <h2 class="text-sm font-bold text-slate-900 border-b border-slate-300 pb-1 mb-3 uppercase tracking-wider">1. RINGKASAN AKTIVITAS</h2>
+                    <table class="w-full text-xs border-collapse border border-slate-300">
+                        <thead class="bg-slate-100">
+                            <tr>
+                                <th class="border border-slate-300 p-2 text-left">Kategori Aktivitas</th>
+                                <th class="border border-slate-300 p-2 text-center w-28">Jumlah</th>
+                                <th class="border border-slate-300 p-2 text-left">Ringkasan / Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rpt-summary-body"></tbody>
+                    </table>
+                </div>
+
+                <div>
+                    <h2 class="text-sm font-bold text-slate-900 border-b border-slate-300 pb-1 mb-3 uppercase tracking-wider">2. LOG PANGGILAN TELEPON</h2>
+                    <table class="w-full text-xs border-collapse border border-slate-300">
+                        <thead class="bg-slate-100">
+                            <tr>
+                                <th class="border border-slate-300 p-1.5 text-center">Waktu</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Lantai</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Pemanggil / Perusahaan</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Ditujukan Kepada</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Pesan / Maksud</th>
+                                <th class="border border-slate-300 p-1.5 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rpt-phone-body"></tbody>
+                    </table>
+                </div>
+
+                <div>
+                    <h2 class="text-sm font-bold text-slate-900 border-b border-slate-300 pb-1 mb-3 uppercase tracking-wider">3. BUKU TAMU (VISITOR LOG)</h2>
+                    <table class="w-full text-xs border-collapse border border-slate-300">
+                        <thead class="bg-slate-100">
+                            <tr>
+                                <th class="border border-slate-300 p-1.5 text-center">Masuk - Keluar</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Asal & Target Lt.</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Nama Tamu & Instansi</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Orang Ditemui</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Tujuan</th>
+                                <th class="border border-slate-300 p-1.5 text-center">Badge</th>
+                                <th class="border border-slate-300 p-1.5 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rpt-visitor-body"></tbody>
+                    </table>
+                </div>
+
+                <div>
+                    <h2 class="text-sm font-bold text-slate-900 border-b border-slate-300 pb-1 mb-3 uppercase tracking-wider">4. PENGGUNAAN RUANG MEETING</h2>
+                    <table class="w-full text-xs border-collapse border border-slate-300">
+                        <thead class="bg-slate-100">
+                            <tr>
+                                <th class="border border-slate-300 p-1.5 text-center">Tanggal & Waktu</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Ruang & Lantai</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Agenda Rapat</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Pemesan (Host) & Divisi</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Catatan / F&B</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rpt-meeting-body"></tbody>
+                    </table>
+                </div>
+
+                <div>
+                    <h2 class="text-sm font-bold text-slate-900 border-b border-slate-300 pb-1 mb-3 uppercase tracking-wider">5. LOG PENGGUNAAN MOBIL SHUTTLE</h2>
+                    <table class="w-full text-xs border-collapse border border-slate-300">
+                        <thead class="bg-slate-100">
+                            <tr>
+                                <th class="border border-slate-300 p-1.5 text-center">Tanggal & Waktu</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Nama Penumpang & Divisi</th>
+                                <th class="border border-slate-300 p-1.5 text-center">Jml Penumpang</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Unit Mobil / Driver</th>
+                                <th class="border border-slate-300 p-1.5 text-left">Tujuan / Rute</th>
+                                <th class="border border-slate-300 p-1.5 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rpt-notes-body"></tbody>
+                    </table>
+                </div>
+
+                <div class="pt-8 grid grid-cols-2 gap-8 text-center text-xs">
+                    <div>
+                        <p class="text-slate-500 mb-12">Dibuat Oleh,</p>
+                        <p class="font-bold border-b border-slate-400 inline-block px-8 pb-1" id="rpt-sig-officer">--</p>
+                        <p class="text-slate-500 mt-1">Receptionist Menara Karya</p>
+                    </div>
+                    <div>
+                        <p class="text-slate-500 mb-12">Diperiksa & Disetujui Oleh,</p>
+                        <p class="font-bold border-b border-slate-400 inline-block px-8 pb-1">[ Ariadi Nasution ]</p>
+                        <p class="text-slate-500 mt-1">Supervisor</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL 1: SETTINGS / SHIFT & FLOOR -->
+    <div id="modal-settings" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden no-print">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="font-bold text-slate-800">Pengaturan Resepsionis & Pos Duty</h3>
+                <button onclick="closeModal('modal-settings')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Nama Petugas Resepsionis</label>
+                    <input type="text" id="cfg-officer-name" class="w-full p-2.5 bg-slate-50 border rounded-lg focus:outline-none focus:border-brand-500">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Lokasi Duty / Pos Lantai</label>
+                    <select id="cfg-assigned-floor" class="w-full p-2.5 bg-slate-50 border rounded-lg focus:outline-none focus:border-brand-500">
+                        <option value="Lantai 18 Menara Karya">Lantai 18 Menara Karya</option>
+                        <option value="Lantai 27 Menara Karya">Lantai 27 Menara Karya</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Shift Kerja</label>
+                    <select id="cfg-shift" class="w-full p-2.5 bg-slate-50 border rounded-lg focus:outline-none focus:border-brand-500">
+                        <option value="Shift Pagi (07:30 - 15:30)">Shift Pagi (07:30 - 15:30)</option>
+                        <option value="Shift Siang (12:00 - 20:00)">Shift Siang (12:00 - 20:00)</option>
+                        <option value="Full Day (08:00 - 17:00)">Full Day (08:00 - 17:00)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-2 pt-2">
+                <button onclick="saveSettings()" class="bg-brand-600 text-white px-4 py-2 rounded-lg text-xs font-semibold hover:bg-brand-700">Simpan Pengaturan</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: PHONE LOG -->
+    <div id="modal-phone" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden no-print">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 id="modal-phone-title" class="font-bold text-slate-800">Tambah Log Panggilan Telepon</h3>
+                <button onclick="closeModal('modal-phone')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-phone" onsubmit="handlePhoneSubmit(event)" class="space-y-3 text-xs">
+                <input type="hidden" id="phone-id">
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Lantai Operator</label>
+                        <select id="phone-floor" class="w-full p-2 bg-slate-50 border rounded-lg font-bold">
+                            <option value="Lantai 18 Menara Karya">Lantai 18 Menara Karya</option>
+                            <option value="Lantai 27 Menara Karya">Lantai 27 Menara Karya</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Tipe</label>
+                        <select id="phone-type" class="w-full p-2 bg-slate-50 border rounded-lg">
+                            <option value="Masuk">Masuk (Inbound)</option>
+                            <option value="Keluar">Keluar (Outbound)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Waktu</label>
+                        <input type="time" id="phone-time" required class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Nama Pemanggil / Kontak</label>
+                        <input type="text" id="phone-caller" required placeholder="Bpk. Ahmad" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Perusahaan / Instansi</label>
+                        <input type="text" id="phone-company" placeholder="PT Sinar Mulia" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Ditujukan Kepada</label>
+                    <input type="text" id="phone-target" required placeholder="Bpk. Rudi (IT Dept)" class="w-full p-2 bg-slate-50 border rounded-lg">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Maksud / Pesan Telepon</label>
+                    <textarea id="phone-purpose" rows="2" required placeholder="Tanyakan penawaran harga server..." class="w-full p-2 bg-slate-50 border rounded-lg"></textarea>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Status / Tindak Lanjut</label>
+                    <select id="phone-status" class="w-full p-2 bg-slate-50 border rounded-lg">
+                        <option value="Selesai">Selesai</option>
+                        <option value="Diteruskan">Diteruskan via WA/Email</option>
+                        <option value="Butuh Telepon Balik">Butuh Telepon Balik (Callback)</option>
+                        <option value="Tidak Diangkat">Tidak Diangkat</option>
+                    </select>
+                </div>
+                <div class="flex justify-end space-x-2 pt-3 border-t">
+                    <button type="button" onclick="closeModal('modal-phone')" class="px-4 py-2 bg-slate-100 rounded-lg text-slate-600">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-brand-600 text-white rounded-lg font-semibold">Simpan Log</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 3: VISITOR LOG -->
+    <div id="modal-visitor" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden no-print">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 id="modal-visitor-title" class="font-bold text-slate-800">Catat Tamu Masuk</h3>
+                <button onclick="closeModal('modal-visitor')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-visitor" onsubmit="handleVisitorSubmit(event)" class="space-y-3 text-xs">
+                <input type="hidden" id="visitor-id">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Lantai Resepsionis</label>
+                        <select id="visitor-floor" class="w-full p-2 bg-slate-50 border rounded-lg font-bold">
+                            <option value="Lantai 18 Menara Karya">Lantai 18 Menara Karya</option>
+                            <option value="Lantai 27 Menara Karya">Lantai 27 Menara Karya</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Waktu Masuk</label>
+                        <input type="time" id="visitor-time-in" required class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Nama Tamu</label>
+                        <input type="text" id="visitor-name" required placeholder="Bpk. Budi Santoso" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Perusahaan / Instansi Asal</label>
+                        <input type="text" id="visitor-company" required placeholder="PT Teknologi Nusantara" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Orang / Divisi Yang Ditemui</label>
+                        <input type="text" id="visitor-host" required placeholder="Ibu Siska (HRD)" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">No. Kartu Badge Visitor</label>
+                        <input type="text" id="visitor-badge" required placeholder="V-042" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Tujuan Kunjungan</label>
+                    <textarea id="visitor-purpose" rows="2" required placeholder="Interview kandidat manager IT..." class="w-full p-2 bg-slate-50 border rounded-lg"></textarea>
+                </div>
+                <div class="flex justify-end space-x-2 pt-3 border-t">
+                    <button type="button" onclick="closeModal('modal-visitor')" class="px-4 py-2 bg-slate-100 rounded-lg text-slate-600">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-semibold">Simpan Tamu</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 4: MEETING RESERVATION -->
+    <div id="modal-meeting" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden no-print">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 id="modal-meeting-title" class="font-bold text-slate-800">Reservasi Ruang Meeting</h3>
+                <button onclick="closeModal('modal-meeting')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-meeting" onsubmit="handleMeetingSubmit(event)" class="space-y-3 text-xs">
+                <input type="hidden" id="meeting-id">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Tanggal Rapat</label>
+                        <input type="date" id="meeting-date" required class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Lokasi Lantai</label>
+                        <select id="meeting-floor" class="w-full p-2 bg-slate-50 border rounded-lg font-bold">
+                            <option value="Lantai 18 Menara Karya">Lantai 18 Menara Karya</option>
+                            <option value="Lantai 27 Menara Karya">Lantai 27 Menara Karya</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Ruang Meeting</label>
+                        <select id="meeting-room" class="w-full p-2 bg-slate-50 border rounded-lg">
+                            <option value="Meeting Room A (Lt.18)">Meeting Room A (Lt.18)</option>
+                            <option value="Meeting Room B (Lt.18)">Meeting Room B (Lt.18)</option>
+                            <option value="Boardroom Utama (Lt.27)">Boardroom Utama (Lt.27)</option>
+                            <option value="Executive Suite (Lt.27)">Executive Suite (Lt.27)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Jam Mulai</label>
+                        <input type="time" id="meeting-start" required class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Jam Selesai</label>
+                        <input type="time" id="meeting-end" required class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Pemesan (Host) / PIC</label>
+                        <input type="text" id="meeting-host" required placeholder="Bpk. Hendra" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Divisi / Perusahaan</label>
+                        <input type="text" id="meeting-div" required placeholder="Finance Dept" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Agenda / Topik Rapat</label>
+                    <input type="text" id="meeting-agenda" required placeholder="Review Budget Q3 Adaro Persada Mandiri" class="w-full p-2 bg-slate-50 border rounded-lg">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Catatan / Kebutuhan F&B</label>
+                    <input type="text" id="meeting-notes" placeholder="Coffee break 15 orang, proyektor" class="w-full p-2 bg-slate-50 border rounded-lg">
+                </div>
+                <div class="flex justify-end space-x-2 pt-3 border-t">
+                    <button type="button" onclick="closeModal('modal-meeting')" class="px-4 py-2 bg-slate-100 rounded-lg text-slate-600">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg font-semibold">Simpan Reservasi</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 5: SHUTTLE NOTE -->
+    <div id="modal-note" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden no-print">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 id="modal-note-title" class="font-bold text-slate-800">Catat Penggunaan Mobil Shuttle</h3>
+                <button onclick="closeModal('modal-note')" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="form-note" onsubmit="handleNoteSubmit(event)" class="space-y-3 text-xs">
+                <input type="hidden" id="note-id">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Tanggal Trip</label>
+                        <input type="date" id="note-date" required class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Waktu Keberangkatan</label>
+                        <input type="time" id="note-time" required class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Pemesan (Host)</label>
+                        <input type="text" id="note-requester" required placeholder="Ibu Rina" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Divisi</label>
+                        <input type="text" id="note-division" required placeholder="General Affairs" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="col-span-2">
+                        <label class="block font-semibold text-slate-700 mb-1">Nama Penumpang (Pisahkan dengan koma)</label>
+                        <input type="text" id="note-passenger" required placeholder="Bpk. Budi, Ibu Siska, Bpk. Joko" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Jml Penumpang</label>
+                        <input type="number" id="note-count" min="1" value="1" required class="w-full p-2 bg-slate-50 border rounded-lg font-bold text-center">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Unit Mobil & Driver</label>
+                        <input type="text" id="note-car" required placeholder="Innova Reborn - Pak Slamet" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-700 mb-1">Tujuan / Rute</label>
+                        <input type="text" id="note-route" required placeholder="Menara Karya -> Kementerian ESDM" class="w-full p-2 bg-slate-50 border rounded-lg">
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">Status Trip</label>
+                    <select id="note-status" class="w-full p-2 bg-slate-50 border rounded-lg">
+                        <option value="Menunggu Berangkat">Menunggu Berangkat</option>
+                        <option value="Sedang Berjalan">Sedang Berjalan</option>
+                        <option value="Selesai & Kembali">Selesai & Kembali</option>
+                    </select>
+                </div>
+                <div class="flex justify-end space-x-2 pt-3 border-t">
+                    <button type="button" onclick="closeModal('modal-note')" class="px-4 py-2 bg-slate-100 rounded-lg text-slate-600">Batal</button>
+                    <button type="submit" class="px-4 py-2 bg-amber-600 text-white rounded-lg font-semibold">Simpan Shuttle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL 6: RESET CONFIRMATION -->
+    <div id="modal-reset" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden no-print">
+        <div class="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-sm p-6 space-y-4 text-center">
+            <div class="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </div>
+            <div>
+                <h3 class="font-bold text-slate-800 text-base">Mulai Hari Baru / Reset Data?</h3>
+                <p class="text-xs text-slate-500 mt-1">Pastikan Anda telah mengarsipkan laporan hari ini sebelum melakukan reset ke hari baru.</p>
+            </div>
+            <div class="flex space-x-2 pt-2">
+                <button onclick="closeModal('modal-reset')" class="flex-1 py-2 bg-slate-100 rounded-lg text-slate-600 text-xs font-medium">Batal</button>
+                <button onclick="executeResetDay()" class="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold">Ya, Mulai Hari Baru</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Supabase configuration using provided publishable key
+        const SUPABASE_URL = 'https://hUQblIzzMBFu0ZtkpeshPQ.supabase.co'; // Default placeholder URL structure or custom project URL if applicable
+        const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hUQblIzzMBFu0ZtkpeshPQ_2crxuAkA';
+        
+        let supabaseClient = null;
+        try {
+            // Initialize Supabase Client
+            if (window.supabase) {
+                supabaseClient = window.supabase.createClient(
+                    'https://hUQblIzzMBFu0ZtkpeshPQ.supabase.co', 
+                    SUPABASE_PUBLISHABLE_KEY
+                );
+            }
+        } catch (e) {
+            console.error("Supabase init error:", e);
+        }
+
+        // Application State Data
+        let appData = {
+            settings: {
+                officerName: "Siti Rahma",
+                assignedFloor: "Lantai 18 Menara Karya",
+                shift: "Shift Pagi (07:30 - 15:30)"
+            },
+            activeFloorFilter: "ALL",
+            phoneLogs: [],
+            visitorLogs: [],
+            meetingLogs: [],
+            shuttleLogs: [],
+            historyLogs: [],
+            weeklyNotes: ""
+        };
+
+        let currentActiveTab = 'phone';
+        let weeklyVisitorChartInstance = null;
+        let weeklyActivityChartInstance = null;
+
+        // Initialize App on Window Load
+        window.onload = async function() {
+            updateClock();
+            setInterval(updateClock, 1000);
+            
+            // Set default dates in inputs to today
+            const todayStr = getTodayDateString();
+            if(document.getElementById('filter-meeting-date')) document.getElementById('filter-meeting-date').value = todayStr;
+            if(document.getElementById('filter-shuttle-date')) document.getElementById('filter-shuttle-date').value = todayStr;
+            if(document.getElementById('phone-time')) document.getElementById('phone-time').value = getCurrentTimeString();
+            if(document.getElementById('visitor-time-in')) document.getElementById('visitor-time-in').value = getCurrentTimeString();
+            if(document.getElementById('meeting-date')) document.getElementById('meeting-date').value = todayStr;
+            if(document.getElementById('note-date')) document.getElementById('note-date').value = todayStr;
+
+            // Load data from Supabase or fallback
+            await loadDataFromSupabase();
+            applySettingsToUI();
+            refreshAllUI();
+        };
+
+        function getTodayDateString() {
+            const d = new Date();
+            let month = '' + (d.getMonth() + 1),
+                day = '' + d.getDate(),
+                year = d.getFullYear();
+            if (month.length < 2) month = '0' + month;
+            if (day.length < 2) day = '0' + day;
+            return [year, month, day].join('-');
+        }
+
+        function getCurrentTimeString() {
+            const d = new Date();
+            return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('current-date-display').innerText = now.toLocaleDateString('id-ID', options);
+            document.getElementById('clock-display').innerText = now.toTimeString().split(' ')[0];
+        }
+
+        // ================= SUPABASE DATA SYNC =================
+        async function loadDataFromSupabase() {
+            updateCloudStatus('syncing', 'Connecting to Supabase...');
+            if (!supabaseClient) {
+                loadFromLocalStorage();
+                updateCloudStatus('error', 'Offline Mode (Local)');
+                return;
+            }
+
+            try {
+                // Fetch settings
+                const { data: settingsData, error: setErr } = await supabaseClient
+                    .from('reception_settings')
+                    .select('*')
+                    .limit(1);
+                
+                if (settingsData && settingsData.length > 0) {
+                    appData.settings = settingsData[0].payload || appData.settings;
+                }
+
+                // Fetch operational logs table or generic store
+                const { data: recordsData, error: recErr } = await supabaseClient
+                    .from('reception_records')
+                    .select('*')
+                    .limit(1);
+
+                if (recordsData && recordsData.length > 0) {
+                    const payload = recordsData[0].payload || {};
+                    appData.phoneLogs = payload.phoneLogs || [];
+                    appData.visitorLogs = payload.visitorLogs || [];
+                    appData.meetingLogs = payload.meetingLogs || [];
+                    appData.shuttleLogs = payload.shuttleLogs || [];
+                    appData.historyLogs = payload.historyLogs || [];
+                    appData.weeklyNotes = payload.weeklyNotes || "";
+                } else {
+                    // Try localStorage as seed if remote empty
+                    loadFromLocalStorage();
+                    await saveToSupabase();
+                }
+                updateCloudStatus('connected', 'Supabase Connected');
+            } catch (err) {
+                console.error("Supabase sync error, falling back to local:", err);
+                loadFromLocalStorage();
+                updateCloudStatus('error', 'Local Storage Mode');
+            }
+        }
+
+        async function saveToSupabase() {
+            if (!supabaseClient) {
+                saveToLocalStorage();
+                return;
+            }
+            updateCloudStatus('syncing', 'Saving to cloud...');
+            try {
+                // Upsert settings
+                await supabaseClient.from('reception_settings').upsert({
+                    id: 1,
+                    payload: appData.settings,
+                    updated_at: new Date()
+                }, { onConflict: 'id' });
+
+                // Upsert records
+                await supabaseClient.from('reception_records').upsert({
+                    id: 1,
+                    payload: {
+                        phoneLogs: appData.phoneLogs,
+                        visitorLogs: appData.visitorLogs,
+                        meetingLogs: appData.meetingLogs,
+                        shuttleLogs: appData.shuttleLogs,
+                        historyLogs: appData.historyLogs,
+                        weeklyNotes: appData.weeklyNotes
+                    },
+                    updated_at: new Date()
+                }, { onConflict: 'id' });
+
+                updateCloudStatus('connected', 'Supabase Synced');
+            } catch (err) {
+                console.error("Failed to save to Supabase:", err);
+                saveToLocalStorage();
+                updateCloudStatus('error', 'Sync Failed (Saved Local)');
+            }
+        }
+
+        function updateCloudStatus(status, text) {
+            const dot = document.getElementById('cloud-status-dot');
+            const txt = document.getElementById('cloud-status-text');
+            if(!dot || !txt) return;
+            txt.innerText = text;
+            if(status === 'connected') {
+                dot.className = "w-2 h-2 rounded-full bg-emerald-500 animate-pulse";
+            } else if(status === 'syncing') {
+                dot.className = "w-2 h-2 rounded-full bg-amber-500 animate-ping";
+            } else {
+                dot.className = "w-2 h-2 rounded-full bg-rose-500";
+            }
+        }
+
+        function loadFromLocalStorage() {
+            const saved = localStorage.getItem('menara_karya_reception_data');
+            if (saved) {
+                try {
+                    appData = JSON.parse(saved);
+                } catch (e) { console.error(e); }
+            } else {
+                // Seed demo data if brand new
+                seedDemoData();
+            }
+        }
+
+        function saveToLocalStorage() {
+            localStorage.setItem('menara_karya_reception_data', JSON.stringify(appData));
+        }
+
+        function seedDemoData() {
+            appData.phoneLogs = [
+                { id: 'p1', time: '08:15', floor: 'Lantai 18 Menara Karya', type: 'Masuk', caller: 'Bpk. Hendrawan', company: 'PT Bank Mandiri', target: 'Ibu Siska (Finance)', purpose: 'Konfirmasi transfer pembayaran invoice vendor bulanan', status: 'Selesai' },
+                { id: 'p2', time: '09:30', floor: 'Lantai 27 Menara Karya', type: 'Masuk', caller: 'Ibu Dian Lestari', company: 'Kementerian ESDM', target: 'Bpk. Ariadi Nasution', purpose: 'Undangan rapat koordinasi kelistrikan tambang', status: 'Diteruskan' }
+            ];
+            appData.visitorLogs = [
+                { id: 'v1', timeIn: '08:45', timeOut: '10:15', floor: 'Lantai 18 Menara Karya', name: 'Rahmat Hidayat', company: 'PT Telkom Indonesia', host: 'Bpk. Rudi (IT)', purpose: 'Maintenance perangkat fiber optic', badge: 'V-012', status: 'Keluar' },
+                { id: 'v2', timeIn: '10:00', timeOut: '', floor: 'Lantai 27 Menara Karya', name: 'Dr. Ir. Wahyu Prasetyo', company: 'Konsultan Lingkungan', host: 'Bpk. Ariadi', purpose: 'Audit AMDAL gedung', badge: 'V-015', status: 'Di Dalam' }
+            ];
+            appData.meetingLogs = [
+                { id: 'm1', date: getTodayDateString(), timeStart: '10:00', timeEnd: '12:00', floor: 'Lantai 27 Menara Karya', room: 'Boardroom Utama (Lt.27)', agenda: 'Monthly Executive Review Adaro Persada Mandiri', host: 'Bpk. Ariadi', division: 'Management', notes: 'Coffee break siap jam 10:30' }
+            ];
+            appData.shuttleLogs = [
+                { id: 's1', date: getTodayDateString(), time: '09:00', requester: 'Ibu Rina', division: 'General Affairs', passenger: 'Bpk. Joko, Ibu Siska', count: 2, car: 'Innova Reborn - Pak Slamet', route: 'Menara Karya -> Kementerian ESDM', status: 'Selesai & Kembali' }
+            ];
+        }
+
+        function applySettingsToUI() {
+            document.getElementById('officer-name-display').innerText = appData.settings.officerName;
+            document.getElementById('shift-display').innerText = appData.settings.shift;
+            document.getElementById('rpt-officer').innerText = appData.settings.officerName;
+            document.getElementById('rpt-sig-officer').innerText = appData.settings.officerName;
+            document.getElementById('rpt-shift').innerText = appData.settings.shift;
+            document.getElementById('rpt-date').innerText = new Date().toLocaleDateString('id-ID', { dateStyle: 'full' });
+            
+            document.getElementById('cfg-officer-name').value = appData.settings.officerName;
+            document.getElementById('cfg-assigned-floor').value = appData.settings.assignedFloor;
+            document.getElementById('cfg-shift').value = appData.settings.shift;
+        }
+
+        function changeActiveFloor(floor) {
+            appData.activeFloorFilter = floor;
+            const banner = document.getElementById('floor-filter-banner');
+            const bannerText = document.getElementById('banner-floor-name');
+            const resetBtn = document.getElementById('btn-reset-floor-filter');
+            const headerSelect = document.getElementById('header-floor-select');
+            
+            headerSelect.value = floor;
+            if(floor === 'ALL') {
+                bannerText.innerText = "Semua Lantai (Global)";
+                resetBtn.classList.add('hidden');
+            } else {
+                bannerText.innerText = floor;
+                resetBtn.classList.remove('hidden');
+            }
+            refreshAllUI();
+        }
+
+        // Navigation Tabs Controller
+        function switchTab(tabId) {
+            currentActiveTab = tabId;
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('border-brand-600', 'text-brand-600', 'font-semibold');
+                btn.classList.add('border-transparent', 'text-slate-500');
+            });
+
+            document.getElementById(`tab-content-${tabId}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-btn-${tabId}`);
+            if(activeBtn) {
+                activeBtn.classList.remove('border-transparent', 'text-slate-500');
+                activeBtn.classList.add('border-brand-600', 'text-brand-600', 'font-semibold');
+            }
+
+            if(tabId === 'weekly') {
+                renderWeeklyReport();
+            } else if(tabId === 'report') {
+                renderDailyReportPreview();
+            }
+        }
+
+        function refreshAllUI() {
+            renderPhoneLogs();
+            renderVisitorLogs();
+            renderMeetingLogs();
+            renderNotes();
+            renderHistoryTable();
+            updateMetricsSummary();
+        }
+
+        // ================= METRICS & COUNTERS =================
+        function updateMetricsSummary() {
+            const filterFloor = appData.activeFloorFilter;
+            
+            const phones = filterFloor === 'ALL' ? appData.phoneLogs : appData.phoneLogs.filter(p => p.floor === filterFloor);
+            const visitors = filterFloor === 'ALL' ? appData.visitorLogs : appData.visitorLogs.filter(v => v.floor === filterFloor);
+            const meetings = filterFloor === 'ALL' ? appData.meetingLogs : appData.meetingLogs.filter(m => m.floor === filterFloor);
+            const shuttle = appData.shuttleLogs; // Shuttle is global operational fleet
+
+            document.getElementById('stat-calls').innerText = phones.length;
+            const pendingCalls = phones.filter(p => p.status === 'Butuh Telepon Balik' || p.status === 'Diteruskan').length;
+            document.getElementById('stat-calls-sub').innerText = `${pendingCalls} butuh tindak lanjut`;
+            document.getElementById('badge-calls').innerText = phones.length;
+
+            document.getElementById('stat-visitors').innerText = visitors.length;
+            const insideVisitors = visitors.filter(v => v.status === 'Di Dalam').length;
+            document.getElementById('stat-visitors-sub').innerText = `${insideVisitors} sedang bertamu`;
+            document.getElementById('badge-visitors').innerText = visitors.length;
+
+            document.getElementById('stat-meetings').innerText = meetings.length;
+            document.getElementById('badge-meetings').innerText = meetings.length;
+
+            const totalPax = shuttle.reduce((acc, curr) => acc + (parseInt(curr.count) || 1), 0);
+            document.getElementById('stat-notes').innerText = `${shuttle.length} Trip`;
+            document.getElementById('stat-notes-sub').innerText = `${totalPax} Total Penumpang`;
+            document.getElementById('badge-notes').innerText = shuttle.length;
+            document.getElementById('badge-history').innerText = appData.historyLogs.length;
+
+            document.getElementById('rpt-floor').innerText = filterFloor === 'ALL' ? 'Semua Lantai (Global Menara Karya)' : filterFloor;
+        }
+
+        // ================= PHONE LOGS CRUD =================
+        function openPhoneModal(editId = null) {
+            document.getElementById('form-phone').reset();
+            document.getElementById('phone-id').value = '';
+            document.getElementById('modal-phone-title').innerText = 'Tambah Log Panggilan Telepon';
+            if(editId) {
+                const item = appData.phoneLogs.find(p => p.id === editId);
+                if(item) {
+                    document.getElementById('phone-id').value = item.id;
+                    document.getElementById('phone-floor').value = item.floor;
+                    document.getElementById('phone-type').value = item.type;
+                    document.getElementById('phone-time').value = item.time;
+                    document.getElementById('phone-caller').value = item.caller;
+                    document.getElementById('phone-company').value = item.company;
+                    document.getElementById('phone-target').value = item.target;
+                    document.getElementById('phone-purpose').value = item.purpose;
+                    document.getElementById('phone-status').value = item.status;
+                    document.getElementById('modal-phone-title').innerText = 'Edit Log Panggilan Telepon';
+                }
+            } else {
+                document.getElementById('phone-floor').value = appData.settings.assignedFloor;
+                document.getElementById('phone-time').value = getCurrentTimeString();
+            }
+            document.getElementById('modal-phone').classList.remove('hidden');
+        }
+
+        async function handlePhoneSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('phone-id').value;
+            const data = {
+                id: id || 'ph_' + Date.now(),
+                floor: document.getElementById('phone-floor').value,
+                type: document.getElementById('phone-type').value,
+                time: document.getElementById('phone-time').value,
+                caller: document.getElementById('phone-caller').value,
+                company: document.getElementById('phone-company').value,
+                target: document.getElementById('phone-target').value,
+                purpose: document.getElementById('phone-purpose').value,
+                status: document.getElementById('phone-status').value
+            };
+
+            if(id) {
+                const idx = appData.phoneLogs.findIndex(p => p.id === id);
+                if(idx !== -1) appData.phoneLogs[idx] = data;
+            } else {
+                appData.phoneLogs.unshift(data);
+            }
+
+            closeModal('modal-phone');
+            await saveToSupabase();
+            refreshAllUI();
+        }
+
+        async function deletePhone(id) {
+            if(confirm('Hapus log panggilan ini?')) {
+                appData.phoneLogs = appData.phoneLogs.filter(p => p.id !== id);
+                await saveToSupabase();
+                refreshAllUI();
+            }
+        }
+
+        function renderPhoneLogs() {
+            const tbody = document.getElementById('phone-table-body');
+            const search = (document.getElementById('search-phone').value || '').toLowerCase();
+            const filterFloor = appData.activeFloorFilter;
+
+            let list = appData.phoneLogs;
+            if(filterFloor !== 'ALL') list = list.filter(p => p.floor === filterFloor);
+            if(search) {
+                list = list.filter(p => p.caller.toLowerCase().includes(search) || (p.company && p.company.toLowerCase().includes(search)) || p.target.toLowerCase().includes(search) || p.purpose.toLowerCase().includes(search));
+            }
+
+            if(list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-slate-400">Belum ada data log panggilan telepon.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(p => `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="p-3.5 font-mono font-medium text-slate-700">${p.time}</td>
+                    <td class="p-3.5"><span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${p.floor}</span></td>
+                    <td class="p-3.5"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${p.type === 'Masuk' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}">${p.type}</span></td>
+                    <td class="p-3.5 font-medium text-slate-900">${p.caller} <span class="block text-[10px] text-slate-400">${p.company || '-'}</span></td>
+                    <td class="p-3.5 text-slate-600">${p.company || '-'}</td>
+                    <td class="p-3.5 text-brand-600 font-semibold">${p.target}</td>
+                    <td class="p-3.5 text-slate-600 max-w-xs truncate" title="${p.purpose}">${p.purpose}</td>
+                    <td class="p-3.5">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold 
+                            ${p.status === 'Selesai' ? 'bg-emerald-100 text-emerald-700' : 
+                              p.status === 'Diteruskan' ? 'bg-blue-100 text-blue-700' : 
+                              p.status === 'Butuh Telepon Balik' ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}">
+                            ${p.status}
+                        </span>
+                    </td>
+                    <td class="p-3.5 text-right space-x-1">
+                        <button onclick="openPhoneModal('${p.id}')" class="text-slate-400 hover:text-brand-600 p-1" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                        <button onclick="deletePhone('${p.id}')" class="text-slate-400 hover:text-rose-600 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // ================= VISITOR LOGS CRUD =================
+        function openVisitorModal(editId = null) {
+            document.getElementById('form-visitor').reset();
+            document.getElementById('visitor-id').value = '';
+            document.getElementById('modal-visitor-title').innerText = 'Catat Tamu Masuk';
+            if(editId) {
+                const item = appData.visitorLogs.find(v => v.id === editId);
+                if(item) {
+                    document.getElementById('visitor-id').value = item.id;
+                    document.getElementById('visitor-floor').value = item.floor;
+                    document.getElementById('visitor-time-in').value = item.timeIn;
+                    document.getElementById('visitor-name').value = item.name;
+                    document.getElementById('visitor-company').value = item.company;
+                    document.getElementById('visitor-host').value = item.host;
+                    document.getElementById('visitor-badge').value = item.badge;
+                    document.getElementById('visitor-purpose').value = item.purpose;
+                    document.getElementById('modal-visitor-title').innerText = 'Edit Data Tamu';
+                }
+            } else {
+                document.getElementById('visitor-floor').value = appData.settings.assignedFloor;
+                document.getElementById('visitor-time-in').value = getCurrentTimeString();
+            }
+            document.getElementById('modal-visitor').classList.remove('hidden');
+        }
+
+        async function handleVisitorSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('visitor-id').value;
+            const data = {
+                id: id || 'vs_' + Date.now(),
+                floor: document.getElementById('visitor-floor').value,
+                timeIn: document.getElementById('visitor-time-in').value,
+                timeOut: id ? (appData.visitorLogs.find(v => v.id === id)?.timeOut || '') : '',
+                name: document.getElementById('visitor-name').value,
+                company: document.getElementById('visitor-company').value,
+                host: document.getElementById('visitor-host').value,
+                badge: document.getElementById('visitor-badge').value,
+                purpose: document.getElementById('visitor-purpose').value,
+                status: id ? (appData.visitorLogs.find(v => v.id === id)?.status || 'Di Dalam') : 'Di Dalam'
+            };
+
+            if(id) {
+                const idx = appData.visitorLogs.findIndex(v => v.id === id);
+                if(idx !== -1) appData.visitorLogs[idx] = data;
+            } else {
+                appData.visitorLogs.unshift(data);
+            }
+
+            closeModal('modal-visitor');
+            await saveToSupabase();
+            refreshAllUI();
+        }
+
+        async function checkOutVisitor(id) {
+            const item = appData.visitorLogs.find(v => v.id === id);
+            if(item) {
+                item.timeOut = getCurrentTimeString();
+                item.status = 'Keluar';
+                await saveToSupabase();
+                refreshAllUI();
+            }
+        }
+
+        async function deleteVisitor(id) {
+            if(confirm('Hapus data tamu ini?')) {
+                appData.visitorLogs = appData.visitorLogs.filter(v => v.id !== id);
+                await saveToSupabase();
+                refreshAllUI();
+            }
+        }
+
+        function renderVisitorLogs() {
+            const tbody = document.getElementById('visitor-table-body');
+            const search = (document.getElementById('search-visitor').value || '').toLowerCase();
+            const filterFloor = appData.activeFloorFilter;
+
+            let list = appData.visitorLogs;
+            if(filterFloor !== 'ALL') list = list.filter(v => v.floor === filterFloor);
+            if(search) {
+                list = list.filter(v => v.name.toLowerCase().includes(search) || v.company.toLowerCase().includes(search) || v.host.toLowerCase().includes(search) || v.purpose.toLowerCase().includes(search));
+            }
+
+            if(list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" class="p-6 text-center text-slate-400">Belum ada buku tamu tercatat.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(v => `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="p-3.5">
+                        <span class="font-mono text-emerald-700 font-semibold">In: ${v.timeIn}</span>
+                        <span class="block font-mono text-slate-400 text-[10px]">Out: ${v.timeOut || 'Belum'}</span>
+                    </td>
+                    <td class="p-3.5"><span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${v.floor}</span></td>
+                    <td class="p-3.5 font-bold text-slate-900">${v.name}</td>
+                    <td class="p-3.5 text-slate-600">${v.company}</td>
+                    <td class="p-3.5 font-medium text-brand-600">${v.host}</td>
+                    <td class="p-3.5 text-slate-600 max-w-xs truncate" title="${v.purpose}">${v.purpose}</td>
+                    <td class="p-3.5"><span class="bg-amber-50 text-amber-800 px-2 py-0.5 rounded text-[10px] font-bold border border-amber-200">${v.badge}</span></td>
+                    <td class="p-3.5">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${v.status === 'Di Dalam' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}">
+                            ${v.status}
+                        </span>
+                    </td>
+                    <td class="p-3.5 text-right space-x-1">
+                        ${v.status === 'Di Dalam' ? `<button onclick="checkOutVisitor('${v.id}')" class="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-semibold px-2 py-1 rounded" title="Check-out Tamu">Checkout</button>` : ''}
+                        <button onclick="openVisitorModal('${v.id}')" class="text-slate-400 hover:text-brand-600 p-1" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                        <button onclick="deleteVisitor('${v.id}')" class="text-slate-400 hover:text-rose-600 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // ================= MEETING LOGS CRUD =================
+        function openMeetingModal(editId = null) {
+            document.getElementById('form-meeting').reset();
+            document.getElementById('meeting-id').value = '';
+            document.getElementById('modal-meeting-title').innerText = 'Reservasi Ruang Meeting';
+            document.getElementById('meeting-date').value = document.getElementById('filter-meeting-date').value || getTodayDateString();
+            
+            if(editId) {
+                const item = appData.meetingLogs.find(m => m.id === editId);
+                if(item) {
+                    document.getElementById('meeting-id').value = item.id;
+                    document.getElementById('meeting-date').value = item.date;
+                    document.getElementById('meeting-floor').value = item.floor;
+                    document.getElementById('meeting-room').value = item.room;
+                    document.getElementById('meeting-start').value = item.timeStart;
+                    document.getElementById('meeting-end').value = item.timeEnd;
+                    document.getElementById('meeting-host').value = item.host;
+                    document.getElementById('meeting-div').value = item.division;
+                    document.getElementById('meeting-agenda').value = item.agenda;
+                    document.getElementById('meeting-notes').value = item.notes;
+                    document.getElementById('modal-meeting-title').innerText = 'Edit Reservasi Meeting';
+                }
+            } else {
+                document.getElementById('meeting-floor').value = appData.settings.assignedFloor;
+                document.getElementById('meeting-start').value = '09:00';
+                document.getElementById('meeting-end').value = '11:00';
+            }
+            document.getElementById('modal-meeting').classList.remove('hidden');
+        }
+
+        async function handleMeetingSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('meeting-id').value;
+            const data = {
+                id: id || 'mt_' + Date.now(),
+                date: document.getElementById('meeting-date').value,
+                floor: document.getElementById('meeting-floor').value,
+                room: document.getElementById('meeting-room').value,
+                timeStart: document.getElementById('meeting-start').value,
+                timeEnd: document.getElementById('meeting-end').value,
+                host: document.getElementById('meeting-host').value,
+                division: document.getElementById('meeting-div').value,
+                agenda: document.getElementById('meeting-agenda').value,
+                notes: document.getElementById('meeting-notes').value
+            };
+
+            if(id) {
+                const idx = appData.meetingLogs.findIndex(m => m.id === id);
+                if(idx !== -1) appData.meetingLogs[idx] = data;
+            } else {
+                appData.meetingLogs.unshift(data);
+            }
+
+            closeModal('modal-meeting');
+            await saveToSupabase();
+            refreshAllUI();
+        }
+
+        async function deleteMeeting(id) {
+            if(confirm('Hapus reservasi ruang meeting ini?')) {
+                appData.meetingLogs = appData.meetingLogs.filter(m => m.id !== id);
+                await saveToSupabase();
+                refreshAllUI();
+            }
+        }
+
+        function resetMeetingDateFilter() {
+            document.getElementById('filter-meeting-date').value = '';
+            renderMeetingLogs();
+        }
+
+        function renderMeetingLogs() {
+            const tbody = document.getElementById('meetings-table-body');
+            const dateFilter = document.getElementById('filter-meeting-date').value;
+            const filterFloor = appData.activeFloorFilter;
+
+            let list = appData.meetingLogs;
+            if(filterFloor !== 'ALL') list = list.filter(m => m.floor === filterFloor);
+            if(dateFilter) {
+                list = list.filter(m => m.date === dateFilter);
+                document.getElementById('meeting-list-title').innerText = `Daftar Reservasi Tanggal: ${dateFilter}`;
+            } else {
+                document.getElementById('meeting-list-title').innerText = `Daftar Semua Reservasi Ruang Meeting`;
+            }
+
+            if(list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="p-6 text-center text-slate-400">Belum ada reservasi ruang meeting untuk tanggal ini.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(m => `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="p-3.5 font-mono font-medium text-slate-700">${m.date}</td>
+                    <td class="p-3.5 font-mono text-purple-700 font-semibold">${m.timeStart} - ${m.timeEnd}</td>
+                    <td class="p-3.5"><span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${m.floor}</span></td>
+                    <td class="p-3.5 font-bold text-slate-900">${m.room}</td>
+                    <td class="p-3.5 font-medium text-slate-800">${m.agenda}</td>
+                    <td class="p-3.5 text-slate-600">${m.host} <span class="block text-[10px] text-slate-400">${m.division}</span></td>
+                    <td class="p-3.5 text-slate-500">${m.notes || '-'}</td>
+                    <td class="p-3.5 text-right space-x-1">
+                        <button onclick="openMeetingModal('${m.id}')" class="text-slate-400 hover:text-brand-600 p-1" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                        <button onclick="deleteMeeting('${m.id}')" class="text-slate-400 hover:text-rose-600 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // ================= SHUTTLE LOGS CRUD =================
+        function openNoteModal(editId = null) {
+            document.getElementById('form-note').reset();
+            document.getElementById('note-id').value = '';
+            document.getElementById('modal-note-title').innerText = 'Catat Penggunaan Mobil Shuttle';
+            document.getElementById('note-date').value = document.getElementById('filter-shuttle-date').value || getTodayDateString();
+
+            if(editId) {
+                const item = appData.shuttleLogs.find(s => s.id === editId);
+                if(item) {
+                    document.getElementById('note-id').value = item.id;
+                    document.getElementById('note-date').value = item.date;
+                    document.getElementById('note-time').value = item.time;
+                    document.getElementById('note-requester').value = item.requester;
+                    document.getElementById('note-division').value = item.division;
+                    document.getElementById('note-passenger').value = item.passenger;
+                    document.getElementById('note-count').value = item.count;
+                    document.getElementById('note-car').value = item.car;
+                    document.getElementById('note-route').value = item.route;
+                    document.getElementById('note-status').value = item.status;
+                    document.getElementById('modal-note-title').innerText = 'Edit Catatan Shuttle';
+                }
+            } else {
+                document.getElementById('note-time').value = getCurrentTimeString();
+            }
+            document.getElementById('modal-note').classList.remove('hidden');
+        }
+
+        async function handleNoteSubmit(e) {
+            e.preventDefault();
+            const id = document.getElementById('note-id').value;
+            const data = {
+                id: id || 'sh_' + Date.now(),
+                date: document.getElementById('note-date').value,
+                time: document.getElementById('note-time').value,
+                requester: document.getElementById('note-requester').value,
+                division: document.getElementById('note-division').value,
+                passenger: document.getElementById('note-passenger').value,
+                count: parseInt(document.getElementById('note-count').value) || 1,
+                car: document.getElementById('note-car').value,
+                route: document.getElementById('note-route').value,
+                status: document.getElementById('note-status').value
+            };
+
+            if(id) {
+                const idx = appData.shuttleLogs.findIndex(s => s.id === id);
+                if(idx !== -1) appData.shuttleLogs[idx] = data;
+            } else {
+                appData.shuttleLogs.unshift(data);
+            }
+
+            closeModal('modal-note');
+            await saveToSupabase();
+            refreshAllUI();
+        }
+
+        async function deleteNote(id) {
+            if(confirm('Hapus data catatan shuttle ini?')) {
+                appData.shuttleLogs = appData.shuttleLogs.filter(s => s.id !== id);
+                await saveToSupabase();
+                refreshAllUI();
+            }
+        }
+
+        function resetShuttleDateFilter() {
+            document.getElementById('filter-shuttle-date').value = '';
+            renderNotes();
+        }
+
+        function renderNotes() {
+            const tbody = document.getElementById('notes-grid');
+            const dateFilter = document.getElementById('filter-shuttle-date').value;
+
+            let list = appData.shuttleLogs;
+            if(dateFilter) {
+                list = list.filter(s => s.date === dateFilter);
+                document.getElementById('shuttle-list-title').innerText = `Daftar Shuttle Tanggal: ${dateFilter}`;
+            } else {
+                document.getElementById('shuttle-list-title').innerText = `Daftar Semua Penggunaan Shuttle`;
+            }
+
+            // Summary metrics for shuttle
+            const totalTrips = list.length;
+            const totalPax = list.reduce((acc, curr) => acc + (parseInt(curr.count) || 1), 0);
+            const avgPax = totalTrips > 0 ? (totalPax / totalTrips).toFixed(1) : 0;
+
+            document.getElementById('shuttle-summary-trips').innerText = `${totalTrips} Trip`;
+            document.getElementById('shuttle-summary-passengers').innerText = `${totalPax} Orang`;
+            document.getElementById('shuttle-summary-avg').innerText = `${avgPax} Orang`;
+
+            if(list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="10" class="p-6 text-center text-slate-400">Belum ada catatan penggunaan mobil shuttle.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(s => `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="p-3.5 font-mono text-slate-700">${s.date}</td>
+                    <td class="p-3.5 font-mono text-amber-700 font-semibold">${s.time}</td>
+                    <td class="p-3.5 font-medium text-slate-900">${s.requester}</td>
+                    <td class="p-3.5 text-slate-600">${s.passenger}</td>
+                    <td class="p-3.5 text-center"><span class="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full text-xs font-bold">${s.count} Pax</span></td>
+                    <td class="p-3.5 text-slate-600">${s.division}</td>
+                    <td class="p-3.5 font-semibold text-slate-800">${s.car}</td>
+                    <td class="p-3.5 text-slate-600">${s.route}</td>
+                    <td class="p-3.5">
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${s.status === 'Selesai & Kembali' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
+                            ${s.status}
+                        </span>
+                    </td>
+                    <td class="p-3.5 text-right space-x-1">
+                        <button onclick="openNoteModal('${s.id}')" class="text-slate-400 hover:text-brand-600 p-1" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                        <button onclick="deleteNote('${s.id}')" class="text-slate-400 hover:text-rose-600 p-1" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // ================= HISTORY & ARCHIVE =================
+        async function archiveCurrentDay() {
+            const todayStr = getTodayDateString();
+            const archiveId = 'arch_' + todayStr + '_' + Date.now();
+            
+            const summary = {
+                id: archiveId,
+                date: todayStr,
+                officer: appData.settings.officerName,
+                floor: appData.settings.assignedFloor,
+                shift: appData.settings.shift,
+                phoneCount: appData.phoneLogs.length,
+                visitorCount: appData.visitorLogs.length,
+                meetingCount: appData.meetingLogs.length,
+                shuttleTripCount: appData.shuttleLogs.length,
+                shuttlePaxCount: appData.shuttleLogs.reduce((acc, curr) => acc + (parseInt(curr.count) || 1), 0),
+                timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+                // Snapshot data
+                snapshot: {
+                    phoneLogs: [...appData.phoneLogs],
+                    visitorLogs: [...appData.visitorLogs],
+                    meetingLogs: [...appData.meetingLogs],
+                    shuttleLogs: [...appData.shuttleLogs]
+                }
+            };
+
+            // Remove existing archive for same date if any
+            appData.historyLogs = appData.historyLogs.filter(h => h.date !== todayStr);
+            appData.historyLogs.unshift(summary);
+
+            await saveToSupabase();
+            alert('Laporan hari ini berhasil diarsipkan ke Supabase!');
+            switchTab('history');
+        }
+
+        function renderHistoryTable() {
+            const tbody = document.getElementById('history-table-body');
+            const search = (document.getElementById('search-history').value || '').toLowerCase();
+
+            let list = appData.historyLogs;
+            if(search) {
+                list = list.filter(h => h.date.includes(search) || h.officer.toLowerCase().includes(search) || h.floor.toLowerCase().includes(search));
+            }
+
+            if(list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">Belum ada arsip laporan harian tersimpan.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(h => `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="p-3.5 font-bold text-slate-900">${h.date}</td>
+                    <td class="p-3.5"><span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${h.floor}</span></td>
+                    <td class="p-3.5 font-medium text-slate-800">${h.officer}</td>
+                    <td class="p-3.5 text-slate-600">${h.shift}</td>
+                    <td class="p-3.5 text-center">
+                        <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-semibold mr-1">Tel: ${h.phoneCount}</span>
+                        <span class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-semibold mr-1">Tamu: ${h.visitorCount}</span>
+                        <span class="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-[10px] font-semibold mr-1">Meet: ${h.meetingCount}</span>
+                        <span class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded text-[10px] font-semibold">Shuttle: ${h.shuttleTripCount} (${h.shuttlePaxCount} Pax)</span>
+                    </td>
+                    <td class="p-3.5 font-mono text-slate-400">${h.timestamp}</td>
+                    <td class="p-3.5 text-right space-x-1">
+                        <button onclick="loadArchiveSnapshot('${h.id}')" class="bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 text-[10px] font-semibold px-2.5 py-1 rounded">Muat Data</button>
+                        <button onclick="deleteArchive('${h.id}')" class="text-slate-400 hover:text-rose-600 p-1" title="Hapus Arsip"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadArchiveSnapshot(id) {
+            const arch = appData.historyLogs.find(h => h.id === id);
+            if(arch && arch.snapshot) {
+                if(confirm(`Muat snapshot laporan tanggal ${arch.date}? Data saat ini akan terganti.`)) {
+                    appData.phoneLogs = [...arch.snapshot.phoneLogs];
+                    appData.visitorLogs = [...arch.snapshot.visitorLogs];
+                    appData.meetingLogs = [...arch.snapshot.meetingLogs];
+                    appData.shuttleLogs = [...arch.snapshot.shuttleLogs];
+                    await saveToSupabase();
+                    refreshAllUI();
+                    switchTab('report');
+                    alert(`Arsip tanggal ${arch.date} berhasil dimuat.`);
+                }
+            }
+        }
+
+        async function deleteArchive(id) {
+            if(confirm('Hapus arsip laporan ini?')) {
+                appData.historyLogs = appData.historyLogs.filter(h => h.id !== id);
+                await saveToSupabase();
+                renderHistoryTable();
+            }
+        }
+
+        // ================= WEEKLY REPORT CHARTS & SUMMARY =================
+        function renderWeeklyReport() {
+            document.getElementById('weekly-archive-count').innerText = `${appData.historyLogs.length} Hari Terarsip`;
+            document.getElementById('weekly-executive-notes').value = appData.weeklyNotes || '';
+
+            // Compute weekly totals from history logs (or fallback to current day if no history)
+            const list = appData.historyLogs;
+            const totalVisitors = list.reduce((acc, curr) => acc + curr.visitorCount, 0) + appData.visitorLogs.length;
+            const totalCalls = list.reduce((acc, curr) => acc + curr.phoneCount, 0) + appData.phoneLogs.length;
+            const totalMeetings = list.reduce((acc, curr) => acc + curr.meetingCount, 0) + appData.meetingLogs.length;
+            const totalShuttlePax = list.reduce((acc, curr) => acc + curr.shuttlePaxCount, 0) + appData.shuttleLogs.reduce((a, c) => a + (parseInt(c.count) || 1), 0);
+
+            document.getElementById('weekly-stat-visitors').innerText = totalVisitors;
+            document.getElementById('weekly-stat-calls').innerText = totalCalls;
+            document.getElementById('weekly-stat-meetings').innerText = totalMeetings;
+            document.getElementById('weekly-stat-shuttle').innerText = totalShuttlePax;
+
+            // Render Weekly Table Body
+            const tbody = document.getElementById('weekly-table-body');
+            if(list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">Belum ada arsip mingguan. Silakan arsipkan laporan harian terlebih dahulu.</td></tr>`;
+            } else {
+                tbody.innerHTML = list.map(h => `
+                    <tr class="hover:bg-slate-50/80 transition-colors">
+                        <td class="p-3.5 font-bold text-slate-900">${h.date} (${h.floor})</td>
+                        <td class="p-3.5 font-medium text-slate-800">${h.officer}</td>
+                        <td class="p-3.5 text-center font-bold text-blue-600">${h.phoneCount}</td>
+                        <td class="p-3.5 text-center font-bold text-emerald-600">${h.visitorCount}</td>
+                        <td class="p-3.5 text-center font-bold text-purple-600">${h.meetingCount}</td>
+                        <td class="p-3.5 text-center font-bold text-amber-600">${h.shuttleTripCount} Trip (${h.shuttlePaxCount} Pax)</td>
+                        <td class="p-3.5 text-right">
+                            <button onclick="loadArchiveSnapshot('${h.id}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-semibold px-2 py-1 rounded">Lihat Detail</button>
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            // Render Charts using Chart.js
+            const labels = list.map(h => h.date).reverse();
+            const visitorData = list.map(h => h.visitorCount).reverse();
+
+            if (weeklyVisitorChartInstance) weeklyVisitorChartInstance.destroy();
+            const ctx1 = document.getElementById('weeklyVisitorChart').getContext('2d');
+            weeklyVisitorChartInstance = new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: labels.length > 0 ? labels : [getTodayDateString()],
+                    datasets: [{
+                        label: 'Jumlah Tamu Harian',
+                        data: visitorData.length > 0 ? visitorData : [appData.visitorLogs.length],
+                        borderColor: '#2563eb',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+
+            if (weeklyActivityChartInstance) weeklyActivityChartInstance.destroy();
+            const ctx2 = document.getElementById('weeklyActivityChart').getContext('2d');
+            weeklyActivityChartInstance = new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Telepon', 'Tamu', 'Meeting', 'Shuttle Trip'],
+                    datasets: [{
+                        data: [totalCalls, totalVisitors, totalMeetings, appData.shuttleLogs.length],
+                        backgroundColor: ['#2563eb', '#10b981', '#8b5cf6', '#f59e0b']
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        }
+
+        async function saveWeeklyNotes() {
+            appData.weeklyNotes = document.getElementById('weekly-executive-notes').value;
+            await saveToSupabase();
+            alert('Catatan eksekutif mingguan berhasil disimpan ke Supabase!');
+        }
+
+        // ================= DAILY REPORT PREVIEW =================
+        function renderDailyReportPreview() {
+            const filterFloor = appData.activeFloorFilter;
+            const phones = filterFloor === 'ALL' ? appData.phoneLogs : appData.phoneLogs.filter(p => p.floor === filterFloor);
+            const visitors = filterFloor === 'ALL' ? appData.visitorLogs : appData.visitorLogs.filter(v => v.floor === filterFloor);
+            const meetings = filterFloor === 'ALL' ? appData.meetingLogs : appData.meetingLogs.filter(m => m.floor === filterFloor);
+            const notes = appData.shuttleLogs;
+
+            // Summary Table
+            const summaryBody = document.getElementById('rpt-summary-body');
+            summaryBody.innerHTML = `
+                <tr>
+                    <td class="border border-slate-300 p-2 font-medium">1. Panggilan Telepon Masuk & Keluar</td>
+                    <td class="border border-slate-300 p-2 text-center font-bold">${phones.length}</td>
+                    <td class="border border-slate-300 p-2 text-slate-600">Tercatat aktif di pos resepsionis</td>
+                </tr>
+                <tr>
+                    <td class="border border-slate-300 p-2 font-medium">2. Buku Tamu (Visitor Log)</td>
+                    <td class="border border-slate-300 p-2 text-center font-bold">${visitors.length}</td>
+                    <td class="border border-slate-300 p-2 text-slate-600">${visitors.filter(v=>v.status==='Di Dalam').length} tamu masih di dalam gedung</td>
+                </tr>
+                <tr>
+                    <td class="border border-slate-300 p-2 font-medium">3. Reservasi Ruang Meeting</td>
+                    <td class="border border-slate-300 p-2 text-center font-bold">${meetings.length}</td>
+                    <td class="border border-slate-300 p-2 text-slate-600">Sesi rapat terjadwal</td>
+                </tr>
+                <tr>
+                    <td class="border border-slate-300 p-2 font-medium">4. Penggunaan Mobil Shuttle Operasional</td>
+                    <td class="border border-slate-300 p-2 text-center font-bold">${notes.length} Trip</td>
+                    <td class="border border-slate-300 p-2 text-slate-600">${notes.reduce((a,c)=>a+(parseInt(c.count)||1),0)} total penumpang</td>
+                </tr>
+            `;
+
+            // Phone Rpt
+            document.getElementById('rpt-phone-body').innerHTML = phones.length === 0 ? `<tr><td colspan="6" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data telepon.</td></tr>` :
+                phones.map(p => `
+                    <tr>
+                        <td class="border border-slate-300 p-1.5 text-center font-mono">${p.time}</td>
+                        <td class="border border-slate-300 p-1.5">${p.floor}</td>
+                        <td class="border border-slate-300 p-1.5">${p.caller} (${p.company || '-'})</td>
+                        <td class="border border-slate-300 p-1.5">${p.target}</td>
+                        <td class="border border-slate-300 p-1.5">${p.purpose}</td>
+                        <td class="border border-slate-300 p-1.5 text-center font-bold">${p.status}</td>
+                    </tr>
+                `).join('');
+
+            // Visitor Rpt
+            document.getElementById('rpt-visitor-body').innerHTML = visitors.length === 0 ? `<tr><td colspan="7" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data tamu.</td></tr>` :
+                visitors.map(v => `
+                    <tr>
+                        <td class="border border-slate-300 p-1.5 text-center font-mono">In: ${v.timeIn}<br>Out: ${v.timeOut || '-'}</td>
+                        <td class="border border-slate-300 p-1.5">${v.floor}</td>
+                        <td class="border border-slate-300 p-1.5 font-bold">${v.name} (${v.company})</td>
+                        <td class="border border-slate-300 p-1.5">${v.host}</td>
+                        <td class="border border-slate-300 p-1.5">${v.purpose}</td>
+                        <td class="border border-slate-300 p-1.5 text-center font-bold">${v.badge}</td>
+                        <td class="border border-slate-300 p-1.5 text-center">${v.status}</td>
+                    </tr>
+                `).join('');
+
+            // Meeting Rpt
+            document.getElementById('rpt-meeting-body').innerHTML = meetings.length === 0 ? `<tr><td colspan="5" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada reservasi meeting.</td></tr>` :
+                meetings.map(m => `
+                    <tr>
+                        <td class="border border-slate-300 p-1.5 text-center font-mono">${m.date}<br>${m.timeStart} - ${m.timeEnd}</td>
+                        <td class="border border-slate-300 p-1.5">${m.room} (${m.floor})</td>
+                        <td class="border border-slate-300 p-1.5 font-bold">${m.agenda}</td>
+                        <td class="border border-slate-300 p-1.5">${m.host} (${m.division})</td>
+                        <td class="border border-slate-300 p-1.5">${m.notes || '-'}</td>
+                    </tr>
+                `).join('');
+
+            // Shuttle Rpt
+            document.getElementById('rpt-notes-body').innerHTML = notes.length === 0 ? `<tr><td colspan="6" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data shuttle.</td></tr>` :
+                notes.map(s => `
+                    <tr>
+                        <td class="border border-slate-300 p-1.5 text-center font-mono">${s.date}<br>${s.time}</td>
+                        <td class="border border-slate-300 p-1.5 font-bold">${s.passenger} (${s.division})</td>
+                        <td class="border border-slate-300 p-1.5 text-center font-bold">${s.count} Pax</td>
+                        <td class="border border-slate-300 p-1.5">${s.car}</td>
+                        <td class="border border-slate-300 p-1.5">${s.route}</td>
+                        <td class="border border-slate-300 p-1.5 text-center">${s.status}</td>
+                    </tr>
+                `).join('');
+        }
+
+        // ================= SETTINGS & RESET =================
+        function openSettingsModal() {
+            document.getElementById('modal-settings').classList.remove('hidden');
+        }
+
+        async function saveSettings() {
+            appData.settings.officerName = document.getElementById('cfg-officer-name').value;
+            appData.settings.assignedFloor = document.getElementById('cfg-assigned-floor').value;
+            appData.settings.shift = document.getElementById('cfg-shift').value;
+
+            applySettingsToUI();
+            closeModal('modal-settings');
+            await saveToSupabase();
+            refreshAllUI();
+        }
+
+        function openResetModal() {
+            document.getElementById('modal-reset').classList.remove('hidden');
+        }
+
+        async function executeResetDay() {
+            appData.phoneLogs = [];
+            appData.visitorLogs = [];
+            appData.meetingLogs = [];
+            appData.shuttleLogs = [];
+            await saveToSupabase();
+            closeModal('modal-reset');
+            refreshAllUI();
+            alert('Data harian telah di-reset untuk hari baru.');
+            switchTab('phone');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+        // ================= EXPORT & BACKUP =================
+        function exportDataCSV() {
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "KATEGORI,WAKTU/TANGGAL, LANTAI, NAMA/PEMANGGIL, INSTANSI/DIVISI, TUJUAN/PESAN, STATUS\r\n";
+
+            appData.phoneLogs.forEach(p => {
+                csvContent += `TELEPON,${p.time},${p.floor},"${p.caller}","${p.company}","${p.purpose}","${p.status}"\r\n`;
+            });
+            appData.visitorLogs.forEach(v => {
+                csvContent += `TAMU,${v.timeIn},${v.floor},"${v.name}","${v.company}","${v.purpose}","${v.status}"\r\n`;
+            });
+            appData.meetingLogs.forEach(m => {
+                csvContent += `MEETING,${m.date} ${m.timeStart},${m.floor},"${m.host}","${m.division}","${m.agenda}","TERJADWAL"\r\n`;
+            });
+            appData.shuttleLogs.forEach(s => {
+                csvContent += `SHUTTLE,${s.date} ${s.time},Menara Karya,"${s.passenger}","${s.division}","${s.route}","${s.status}"\r\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `Laporan_Menara_Karya_${getTodayDateString()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function exportWeeklyReportExcel() {
+            exportDataCSV(); // Exports comprehensive CSV dataset compatible with Excel
+        }
+
+        function exportDataJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `Backup_Receptionist_MenaraKarya_${getTodayDateString()}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+    </script>
+</body>
+</html>
