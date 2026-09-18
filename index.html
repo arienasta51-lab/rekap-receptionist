@@ -998,17 +998,13 @@
 
     <script>
         // Supabase configuration using provided publishable key
-        const SUPABASE_URL = 'https://hUQblIzzMBFu0ZtkpeshPQ.supabase.co'; // Default placeholder URL structure or custom project URL if applicable
+        const SUPABASE_URL = 'https://hUQblIzzMBFu0ZtkpeshPQ.supabase.co';
         const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hUQblIzzMBFu0ZtkpeshPQ_2crxuAkA';
         
         let supabaseClient = null;
         try {
-            // Initialize Supabase Client
             if (window.supabase) {
-                supabaseClient = window.supabase.createClient(
-                    'https://hUQblIzzMBFu0ZtkpeshPQ.supabase.co', 
-                    SUPABASE_PUBLISHABLE_KEY
-                );
+                supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
             }
         } catch (e) {
             console.error("Supabase init error:", e);
@@ -1039,7 +1035,6 @@
             updateClock();
             setInterval(updateClock, 1000);
             
-            // Set default dates in inputs to today
             const todayStr = getTodayDateString();
             if(document.getElementById('filter-meeting-date')) document.getElementById('filter-meeting-date').value = todayStr;
             if(document.getElementById('filter-shuttle-date')) document.getElementById('filter-shuttle-date').value = todayStr;
@@ -1048,7 +1043,6 @@
             if(document.getElementById('meeting-date')) document.getElementById('meeting-date').value = todayStr;
             if(document.getElementById('note-date')) document.getElementById('note-date').value = todayStr;
 
-            // Load data from Supabase or fallback
             await loadDataFromSupabase();
             applySettingsToUI();
             refreshAllUI();
@@ -1086,8 +1080,7 @@
             }
 
             try {
-                // Fetch settings
-                const { data: settingsData, error: setErr } = await supabaseClient
+                const { data: settingsData } = await supabaseClient
                     .from('reception_settings')
                     .select('*')
                     .limit(1);
@@ -1096,8 +1089,7 @@
                     appData.settings = settingsData[0].payload || appData.settings;
                 }
 
-                // Fetch operational logs table or generic store
-                const { data: recordsData, error: recErr } = await supabaseClient
+                const { data: recordsData } = await supabaseClient
                     .from('reception_records')
                     .select('*')
                     .limit(1);
@@ -1111,7 +1103,6 @@
                     appData.historyLogs = payload.historyLogs || [];
                     appData.weeklyNotes = payload.weeklyNotes || "";
                 } else {
-                    // Try localStorage as seed if remote empty
                     loadFromLocalStorage();
                     await saveToSupabase();
                 }
@@ -1130,14 +1121,12 @@
             }
             updateCloudStatus('syncing', 'Saving to cloud...');
             try {
-                // Upsert settings
                 await supabaseClient.from('reception_settings').upsert({
                     id: 1,
                     payload: appData.settings,
                     updated_at: new Date()
                 }, { onConflict: 'id' });
 
-                // Upsert records
                 await supabaseClient.from('reception_records').upsert({
                     id: 1,
                     payload: {
@@ -1180,7 +1169,6 @@
                     appData = JSON.parse(saved);
                 } catch (e) { console.error(e); }
             } else {
-                // Seed demo data if brand new
                 seedDemoData();
             }
         }
@@ -1237,7 +1225,6 @@
             refreshAllUI();
         }
 
-        // Navigation Tabs Controller
         function switchTab(tabId) {
             currentActiveTab = tabId;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
@@ -1269,14 +1256,13 @@
             updateMetricsSummary();
         }
 
-        // ================= METRICS & COUNTERS =================
         function updateMetricsSummary() {
             const filterFloor = appData.activeFloorFilter;
             
             const phones = filterFloor === 'ALL' ? appData.phoneLogs : appData.phoneLogs.filter(p => p.floor === filterFloor);
             const visitors = filterFloor === 'ALL' ? appData.visitorLogs : appData.visitorLogs.filter(v => v.floor === filterFloor);
             const meetings = filterFloor === 'ALL' ? appData.meetingLogs : appData.meetingLogs.filter(m => m.floor === filterFloor);
-            const shuttle = appData.shuttleLogs; // Shuttle is global operational fleet
+            const shuttle = appData.shuttleLogs;
 
             document.getElementById('stat-calls').innerText = phones.length;
             const pendingCalls = phones.filter(p => p.status === 'Butuh Telepon Balik' || p.status === 'Diteruskan').length;
@@ -1703,7 +1689,6 @@
                 document.getElementById('shuttle-list-title').innerText = `Daftar Semua Penggunaan Shuttle`;
             }
 
-            // Summary metrics for shuttle
             const totalTrips = list.length;
             const totalPax = list.reduce((acc, curr) => acc + (parseInt(curr.count) || 1), 0);
             const avgPax = totalTrips > 0 ? (totalPax / totalTrips).toFixed(1) : 0;
@@ -1756,77 +1741,28 @@
                 meetingCount: appData.meetingLogs.length,
                 shuttleTripCount: appData.shuttleLogs.length,
                 shuttlePaxCount: appData.shuttleLogs.reduce((acc, curr) => acc + (parseInt(curr.count) || 1), 0),
-                timestamp: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-                // Snapshot data
-                snapshot: {
-                    phoneLogs: [...appData.phoneLogs],
-                    visitorLogs: [...appData.visitorLogs],
-                    meetingLogs: [...appData.meetingLogs],
-                    shuttleLogs: [...appData.shuttleLogs]
-                }
+                phoneLogs: [...appData.phoneLogs],
+                visitorLogs: [...appData.visitorLogs],
+                meetingLogs: [...appData.meetingLogs],
+                shuttleLogs: [...appData.shuttleLogs],
+                archivedAt: new Date().toLocaleString('id-ID')
             };
 
-            // Remove existing archive for same date if any
-            appData.historyLogs = appData.historyLogs.filter(h => h.date !== todayStr);
-            appData.historyLogs.unshift(summary);
+            const existingIndex = appData.historyLogs.findIndex(h => h.date === todayStr);
+            if(existingIndex !== -1) {
+                if(!confirm(`Arsip untuk tanggal ${todayStr} sudah ada. Timpa dengan data terbaru hari ini?`)) return;
+                appData.historyLogs[existingIndex] = summary;
+            } else {
+                appData.historyLogs.unshift(summary);
+            }
 
             await saveToSupabase();
-            alert('Laporan hari ini berhasil diarsipkan ke Supabase!');
+            alert('Laporan hari ini berhasil disimpan & diarsipkan ke Supabase!');
+            renderHistoryTable();
             switchTab('history');
         }
 
-        function renderHistoryTable() {
-            const tbody = document.getElementById('history-table-body');
-            const search = (document.getElementById('search-history').value || '').toLowerCase();
-
-            let list = appData.historyLogs;
-            if(search) {
-                list = list.filter(h => h.date.includes(search) || h.officer.toLowerCase().includes(search) || h.floor.toLowerCase().includes(search));
-            }
-
-            if(list.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">Belum ada arsip laporan harian tersimpan.</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = list.map(h => `
-                <tr class="hover:bg-slate-50/80 transition-colors">
-                    <td class="p-3.5 font-bold text-slate-900">${h.date}</td>
-                    <td class="p-3.5"><span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${h.floor}</span></td>
-                    <td class="p-3.5 font-medium text-slate-800">${h.officer}</td>
-                    <td class="p-3.5 text-slate-600">${h.shift}</td>
-                    <td class="p-3.5 text-center">
-                        <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-semibold mr-1">Tel: ${h.phoneCount}</span>
-                        <span class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-semibold mr-1">Tamu: ${h.visitorCount}</span>
-                        <span class="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-[10px] font-semibold mr-1">Meet: ${h.meetingCount}</span>
-                        <span class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded text-[10px] font-semibold">Shuttle: ${h.shuttleTripCount} (${h.shuttlePaxCount} Pax)</span>
-                    </td>
-                    <td class="p-3.5 font-mono text-slate-400">${h.timestamp}</td>
-                    <td class="p-3.5 text-right space-x-1">
-                        <button onclick="loadArchiveSnapshot('${h.id}')" class="bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 text-[10px] font-semibold px-2.5 py-1 rounded">Muat Data</button>
-                        <button onclick="deleteArchive('${h.id}')" class="text-slate-400 hover:text-rose-600 p-1" title="Hapus Arsip"><i class="fa-solid fa-trash"></i></button>
-                    </td>
-                </tr>
-            `).join('');
-        }
-
-        async function loadArchiveSnapshot(id) {
-            const arch = appData.historyLogs.find(h => h.id === id);
-            if(arch && arch.snapshot) {
-                if(confirm(`Muat snapshot laporan tanggal ${arch.date}? Data saat ini akan terganti.`)) {
-                    appData.phoneLogs = [...arch.snapshot.phoneLogs];
-                    appData.visitorLogs = [...arch.snapshot.visitorLogs];
-                    appData.meetingLogs = [...arch.snapshot.meetingLogs];
-                    appData.shuttleLogs = [...arch.snapshot.shuttleLogs];
-                    await saveToSupabase();
-                    refreshAllUI();
-                    switchTab('report');
-                    alert(`Arsip tanggal ${arch.date} berhasil dimuat.`);
-                }
-            }
-        }
-
-        async function deleteArchive(id) {
+        async function deleteHistory(id) {
             if(confirm('Hapus arsip laporan ini?')) {
                 appData.historyLogs = appData.historyLogs.filter(h => h.id !== id);
                 await saveToSupabase();
@@ -1834,225 +1770,236 @@
             }
         }
 
-        // ================= WEEKLY REPORT CHARTS & SUMMARY =================
-        function renderWeeklyReport() {
-            document.getElementById('weekly-archive-count').innerText = `${appData.historyLogs.length} Hari Terarsip`;
-            document.getElementById('weekly-executive-notes').value = appData.weeklyNotes || '';
+        function renderHistoryTable() {
+            const tbody = document.getElementById('history-table-body');
+            const search = (document.getElementById('search-history') ? document.getElementById('search-history').value : '').toLowerCase();
 
-            // Compute weekly totals from history logs (or fallback to current day if no history)
-            const list = appData.historyLogs;
-            const totalVisitors = list.reduce((acc, curr) => acc + curr.visitorCount, 0) + appData.visitorLogs.length;
-            const totalCalls = list.reduce((acc, curr) => acc + curr.phoneCount, 0) + appData.phoneLogs.length;
-            const totalMeetings = list.reduce((acc, curr) => acc + curr.meetingCount, 0) + appData.meetingLogs.length;
-            const totalShuttlePax = list.reduce((acc, curr) => acc + curr.shuttlePaxCount, 0) + appData.shuttleLogs.reduce((a, c) => a + (parseInt(c.count) || 1), 0);
+            let list = appData.historyLogs;
+            if(search) {
+                list = list.filter(h => h.date.toLowerCase().includes(search) || h.officer.toLowerCase().includes(search) || h.floor.toLowerCase().includes(search));
+            }
+
+            if(list.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">Belum ada arsip laporan tersimpan. Gunakan tombol "Simpan & Arsipkan Hari Ini" di menu Rekap Laporan.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = list.map(h => `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="p-3.5 font-bold text-slate-900">${h.date}</td>
+                    <td class="p-3.5"><span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[10px] font-semibold">${h.floor}</span></td>
+                    <td class="p-3.5 text-slate-700">${h.officer}</td>
+                    <td class="p-3.5 text-slate-500">${h.shift}</td>
+                    <td class="p-3.5 text-center">
+                        <span class="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-semibold mr-1">Tel: ${h.phoneCount}</span>
+                        <span class="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-semibold mr-1">Tamu: ${h.visitorCount}</span>
+                        <span class="bg-purple-50 text-purple-700 px-2 py-0.5 rounded text-[10px] font-semibold mr-1">Mtg: ${h.meetingCount}</span>
+                        <span class="bg-amber-50 text-amber-700 px-2 py-0.5 rounded text-[10px] font-semibold">Shuttle: ${h.shuttleTripCount} Trip</span>
+                    </td>
+                    <td class="p-3.5 font-mono text-[10px] text-slate-400">${h.archivedAt}</td>
+                    <td class="p-3.5 text-right space-x-1">
+                        <button onclick="viewArchivedReport('${h.id}')" class="bg-brand-50 hover:bg-brand-100 text-brand-700 text-[10px] font-semibold px-2.5 py-1 rounded">Lihat</button>
+                        <button onclick="deleteHistory('${h.id}')" class="text-slate-400 hover:text-rose-600 p-1" title="Hapus Arsip"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function viewArchivedReport(id) {
+            const h = appData.historyLogs.find(item => item.id === id);
+            if(!h) return;
+            
+            // Populate print preview view with historical data temporarily
+            document.getElementById('rpt-date').innerText = h.date;
+            document.getElementById('rpt-floor').innerText = h.floor;
+            document.getElementById('rpt-officer').innerText = h.officer;
+            document.getElementById('rpt-sig-officer').innerText = h.officer;
+            document.getElementById('rpt-shift').innerText = h.shift;
+
+            // Render tables in preview
+            document.getElementById('rpt-summary-body').innerHTML = `
+                <tr><td class="border border-slate-300 p-2 font-medium">Log Panggilan Telepon</td><td class="border border-slate-300 p-2 text-center font-bold">${h.phoneCount}</td><td class="border border-slate-300 p-2">Tercatat dalam arsip</td></tr>
+                <tr><td class="border border-slate-300 p-2 font-medium">Buku Tamu</td><td class="border border-slate-300 p-2 text-center font-bold">${h.visitorCount}</td><td class="border border-slate-300 p-2">Tercatat dalam arsip</td></tr>
+                <tr><td class="border border-slate-300 p-2 font-medium">Reservasi Ruang Meeting</td><td class="border border-slate-300 p-2 text-center font-bold">${h.meetingCount}</td><td class="border border-slate-300 p-2">Tercatat dalam arsip</td></tr>
+                <tr><td class="border border-slate-300 p-2 font-medium">Mobil Shuttle</td><td class="border border-slate-300 p-2 text-center font-bold">${h.shuttleTripCount} Trip</td><td class="border border-slate-300 p-2">${h.shuttlePaxCount} Total Penumpang</td></tr>
+            `;
+
+            document.getElementById('rpt-phone-body').innerHTML = h.phoneLogs.length ? h.phoneLogs.map(p => `
+                <tr><td class="border border-slate-300 p-1.5 text-center font-mono">${p.time}</td><td class="border border-slate-300 p-1.5">${p.floor}</td><td class="border border-slate-300 p-1.5">${p.caller} (${p.company || '-'})</td><td class="border border-slate-300 p-1.5">${p.target}</td><td class="border border-slate-300 p-1.5">${p.purpose}</td><td class="border border-slate-300 p-1.5 text-center">${p.status}</td></tr>
+            `).join('') : `<tr><td colspan="6" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data</td></tr>`;
+
+            document.getElementById('rpt-visitor-body').innerHTML = h.visitorLogs.length ? h.visitorLogs.map(v => `
+                <tr><td class="border border-slate-300 p-1.5 text-center font-mono">In: ${v.timeIn}<br>Out: ${v.timeOut || '-'}</td><td class="border border-slate-300 p-1.5">${v.floor}</td><td class="border border-slate-300 p-1.5 font-bold">${v.name} (${v.company})</td><td class="border border-slate-300 p-1.5">${v.host}</td><td class="border border-slate-300 p-1.5">${v.purpose}</td><td class="border border-slate-300 p-1.5 text-center">${v.badge}</td><td class="border border-slate-300 p-1.5 text-center">${v.status}</td></tr>
+            `).join('') : `<tr><td colspan="7" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data</td></tr>`;
+
+            document.getElementById('rpt-meeting-body').innerHTML = h.meetingLogs.length ? h.meetingLogs.map(m => `
+                <tr><td class="border border-slate-300 p-1.5 text-center font-mono">${m.date}<br>${m.timeStart}-${m.timeEnd}</td><td class="border border-slate-300 p-1.5">${m.room} (${m.floor})</td><td class="border border-slate-300 p-1.5 font-bold">${m.agenda}</td><td class="border border-slate-300 p-1.5">${m.host} (${m.division})</td><td class="border border-slate-300 p-1.5">${m.notes || '-'}</td></tr>
+            `).join('') : `<tr><td colspan="5" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data</td></tr>`;
+
+            document.getElementById('rpt-notes-body').innerHTML = h.shuttleLogs.length ? h.shuttleLogs.map(s => `
+                <tr><td class="border border-slate-300 p-1.5 text-center font-mono">${s.date}<br>${s.time}</td><td class="border border-slate-300 p-1.5">${s.passenger} (${s.division})</td><td class="border border-slate-300 p-1.5 text-center font-bold">${s.count} Pax</td><td class="border border-slate-300 p-1.5">${s.car}</td><td class="border border-slate-300 p-1.5">${s.route}</td><td class="border border-slate-300 p-1.5 text-center">${s.status}</td></tr>
+            `).join('') : `<tr><td colspan="6" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data</td></tr>`;
+
+            switchTab('report');
+        }
+
+        // ================= WEEKLY REPORT TAB & CHARTS =================
+        function renderWeeklyReport() {
+            const history = appData.historyLogs;
+            
+            const totalVisitors = history.reduce((acc, h) => acc + h.visitorCount, 0);
+            const totalCalls = history.reduce((acc, h) => acc + h.phoneCount, 0);
+            const totalMeetings = history.reduce((acc, h) => acc + h.meetingCount, 0);
+            const totalShuttle = history.reduce((acc, h) => acc + h.shuttlePaxCount, 0);
 
             document.getElementById('weekly-stat-visitors').innerText = totalVisitors;
             document.getElementById('weekly-stat-calls').innerText = totalCalls;
             document.getElementById('weekly-stat-meetings').innerText = totalMeetings;
-            document.getElementById('weekly-stat-shuttle').innerText = totalShuttlePax;
+            document.getElementById('weekly-stat-shuttle').innerText = totalShuttle;
+            document.getElementById('weekly-archive-count').innerText = `${history.length} Hari Terarsip`;
+            document.getElementById('weekly-executive-notes').value = appData.weeklyNotes;
 
-            // Render Weekly Table Body
             const tbody = document.getElementById('weekly-table-body');
-            if(list.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">Belum ada arsip mingguan. Silakan arsipkan laporan harian terlebih dahulu.</td></tr>`;
+            if(history.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-slate-400">Belum ada arsip harian yang cukup untuk rekapitulasi mingguan.</td></tr>`;
             } else {
-                tbody.innerHTML = list.map(h => `
-                    <tr class="hover:bg-slate-50/80 transition-colors">
-                        <td class="p-3.5 font-bold text-slate-900">${h.date} (${h.floor})</td>
-                        <td class="p-3.5 font-medium text-slate-800">${h.officer}</td>
-                        <td class="p-3.5 text-center font-bold text-blue-600">${h.phoneCount}</td>
-                        <td class="p-3.5 text-center font-bold text-emerald-600">${h.visitorCount}</td>
-                        <td class="p-3.5 text-center font-bold text-purple-600">${h.meetingCount}</td>
-                        <td class="p-3.5 text-center font-bold text-amber-600">${h.shuttleTripCount} Trip (${h.shuttlePaxCount} Pax)</td>
+                tbody.innerHTML = history.map(h => `
+                    <tr class="hover:bg-slate-50">
+                        <td class="p-3.5 font-bold text-slate-900">${h.date}</td>
+                        <td class="p-3.5 text-slate-700">${h.officer}</td>
+                        <td class="p-3.5 text-center font-semibold text-blue-600">${h.phoneCount}</td>
+                        <td class="p-3.5 text-center font-semibold text-emerald-600">${h.visitorCount}</td>
+                        <td class="p-3.5 text-center font-semibold text-purple-600">${h.meetingCount}</td>
+                        <td class="p-3.5 text-center font-semibold text-amber-600">${h.shuttleTripCount} Trip (${h.shuttlePaxCount} Pax)</td>
                         <td class="p-3.5 text-right">
-                            <button onclick="loadArchiveSnapshot('${h.id}')" class="bg-amber-50 hover:bg-amber-100 text-amber-800 text-[10px] font-semibold px-2 py-1 rounded">Lihat Detail</button>
+                            <button onclick="viewArchivedReport('${h.id}')" class="text-brand-600 hover:underline font-semibold">Buka Laporan</button>
                         </td>
                     </tr>
                 `).join('');
             }
 
-            // Render Charts using Chart.js
-            const labels = list.map(h => h.date).reverse();
-            const visitorData = list.map(h => h.visitorCount).reverse();
+            // Render Charts
+            renderWeeklyCharts(history);
+        }
 
-            if (weeklyVisitorChartInstance) weeklyVisitorChartInstance.destroy();
-            const ctx1 = document.getElementById('weeklyVisitorChart').getContext('2d');
-            weeklyVisitorChartInstance = new Chart(ctx1, {
+        function renderWeeklyCharts(history) {
+            // Sort history by date ascending for charts
+            const sorted = [...history].sort((a,b) => new Date(a.date) - new Date(b.date));
+            const labels = sorted.map(h => h.date);
+            const visitorData = sorted.map(h => h.visitorCount);
+            const callData = sorted.map(h => h.phoneCount);
+            const meetingData = sorted.map(h => h.meetingCount);
+
+            // Visitor Trend Chart
+            const ctxVisitor = document.getElementById('weeklyVisitorChart').getContext('2d');
+            if(weeklyVisitorChartInstance) weeklyVisitorChartInstance.destroy();
+            weeklyVisitorChartInstance = new Chart(ctxVisitor, {
                 type: 'line',
                 data: {
-                    labels: labels.length > 0 ? labels : [getTodayDateString()],
+                    labels: labels.length ? labels : ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat'],
                     datasets: [{
                         label: 'Jumlah Tamu Harian',
-                        data: visitorData.length > 0 ? visitorData : [appData.visitorLogs.length],
+                        data: visitorData.length ? visitorData : [12, 19, 15, 22, 18],
                         borderColor: '#2563eb',
                         backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                        borderWidth: 2,
                         fill: true,
-                        tension: 0.3
+                        tension: 0.3,
+                        borderWidth: 2
                     }]
                 },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
             });
 
-            if (weeklyActivityChartInstance) weeklyActivityChartInstance.destroy();
-            const ctx2 = document.getElementById('weeklyActivityChart').getContext('2d');
-            weeklyActivityChartInstance = new Chart(ctx2, {
+            // Activity Distribution Doughnut Chart
+            const totalC = callData.reduce((a,b)=>a+b, 0) || 35;
+            const totalV = visitorData.reduce((a,b)=>a+b, 0) || 86;
+            const totalM = meetingData.reduce((a,b)=>a+b, 0) || 14;
+            const totalS = history.reduce((a,h)=>a+h.shuttleTripCount, 0) || 10;
+
+            const ctxActivity = document.getElementById('weeklyActivityChart').getContext('2d');
+            if(weeklyActivityChartInstance) weeklyActivityChartInstance.destroy();
+            weeklyActivityChartInstance = new Chart(ctxActivity, {
                 type: 'doughnut',
                 data: {
-                    labels: ['Telepon', 'Tamu', 'Meeting', 'Shuttle Trip'],
+                    labels: ['Telepon', 'Buku Tamu', 'Meeting', 'Shuttle Trip'],
                     datasets: [{
-                        data: [totalCalls, totalVisitors, totalMeetings, appData.shuttleLogs.length],
-                        backgroundColor: ['#2563eb', '#10b981', '#8b5cf6', '#f59e0b']
+                        data: [totalC, totalV, totalM, totalS],
+                        backgroundColor: ['#2563eb', '#10b981', '#8b5cf6', '#f59e0b'],
+                        borderWidth: 2
                     }]
                 },
-                options: { responsive: true, maintainAspectRatio: false }
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } }
+                }
             });
         }
 
         async function saveWeeklyNotes() {
             appData.weeklyNotes = document.getElementById('weekly-executive-notes').value;
             await saveToSupabase();
-            alert('Catatan eksekutif mingguan berhasil disimpan ke Supabase!');
+            alert('Catatan eksekutif mingguan berhasil disimpan!');
         }
 
         // ================= DAILY REPORT PREVIEW =================
         function renderDailyReportPreview() {
+            document.getElementById('rpt-date').innerText = new Date().toLocaleDateString('id-ID', { dateStyle: 'full' });
+            document.getElementById('rpt-floor').innerText = appData.activeFloorFilter === 'ALL' ? 'Semua Lantai (Global Menara Karya)' : appData.activeFloorFilter;
+            document.getElementById('rpt-officer').innerText = appData.settings.officerName;
+            document.getElementById('rpt-shift').innerText = appData.settings.shift;
+
             const filterFloor = appData.activeFloorFilter;
             const phones = filterFloor === 'ALL' ? appData.phoneLogs : appData.phoneLogs.filter(p => p.floor === filterFloor);
             const visitors = filterFloor === 'ALL' ? appData.visitorLogs : appData.visitorLogs.filter(v => v.floor === filterFloor);
             const meetings = filterFloor === 'ALL' ? appData.meetingLogs : appData.meetingLogs.filter(m => m.floor === filterFloor);
-            const notes = appData.shuttleLogs;
+            const shuttle = appData.shuttleLogs;
 
-            // Summary Table
-            const summaryBody = document.getElementById('rpt-summary-body');
-            summaryBody.innerHTML = `
-                <tr>
-                    <td class="border border-slate-300 p-2 font-medium">1. Panggilan Telepon Masuk & Keluar</td>
-                    <td class="border border-slate-300 p-2 text-center font-bold">${phones.length}</td>
-                    <td class="border border-slate-300 p-2 text-slate-600">Tercatat aktif di pos resepsionis</td>
-                </tr>
-                <tr>
-                    <td class="border border-slate-300 p-2 font-medium">2. Buku Tamu (Visitor Log)</td>
-                    <td class="border border-slate-300 p-2 text-center font-bold">${visitors.length}</td>
-                    <td class="border border-slate-300 p-2 text-slate-600">${visitors.filter(v=>v.status==='Di Dalam').length} tamu masih di dalam gedung</td>
-                </tr>
-                <tr>
-                    <td class="border border-slate-300 p-2 font-medium">3. Reservasi Ruang Meeting</td>
-                    <td class="border border-slate-300 p-2 text-center font-bold">${meetings.length}</td>
-                    <td class="border border-slate-300 p-2 text-slate-600">Sesi rapat terjadwal</td>
-                </tr>
-                <tr>
-                    <td class="border border-slate-300 p-2 font-medium">4. Penggunaan Mobil Shuttle Operasional</td>
-                    <td class="border border-slate-300 p-2 text-center font-bold">${notes.length} Trip</td>
-                    <td class="border border-slate-300 p-2 text-slate-600">${notes.reduce((a,c)=>a+(parseInt(c.count)||1),0)} total penumpang</td>
-                </tr>
+            document.getElementById('rpt-summary-body').innerHTML = `
+                <tr><td class="border border-slate-300 p-2 font-medium">Log Panggilan Telepon</td><td class="border border-slate-300 p-2 text-center font-bold">${phones.length}</td><td class="border border-slate-300 p-2">Tercatat aktif di sistem</td></tr>
+                <tr><td class="border border-slate-300 p-2 font-medium">Buku Tamu</td><td class="border border-slate-300 p-2 text-center font-bold">${visitors.length}</td><td class="border border-slate-300 p-2">${visitors.filter(v=>v.status==='Di Dalam').length} sedang di dalam gedung</td></tr>
+                <tr><td class="border border-slate-300 p-2 font-medium">Reservasi Ruang Meeting</td><td class="border border-slate-300 p-2 text-center font-bold">${meetings.length}</td><td class="border border-slate-300 p-2">Sesi rapat terjadwal</td></tr>
+                <tr><td class="border border-slate-300 p-2 font-medium">Mobil Shuttle Operasional</td><td class="border border-slate-300 p-2 text-center font-bold">${shuttle.length} Trip</td><td class="border border-slate-300 p-2">${shuttle.reduce((a,c)=>a+(parseInt(c.count)||1),0)} Total Penumpang</td></tr>
             `;
 
-            // Phone Rpt
-            document.getElementById('rpt-phone-body').innerHTML = phones.length === 0 ? `<tr><td colspan="6" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data telepon.</td></tr>` :
-                phones.map(p => `
-                    <tr>
-                        <td class="border border-slate-300 p-1.5 text-center font-mono">${p.time}</td>
-                        <td class="border border-slate-300 p-1.5">${p.floor}</td>
-                        <td class="border border-slate-300 p-1.5">${p.caller} (${p.company || '-'})</td>
-                        <td class="border border-slate-300 p-1.5">${p.target}</td>
-                        <td class="border border-slate-300 p-1.5">${p.purpose}</td>
-                        <td class="border border-slate-300 p-1.5 text-center font-bold">${p.status}</td>
-                    </tr>
-                `).join('');
+            document.getElementById('rpt-phone-body').innerHTML = phones.length ? phones.map(p => `
+                <tr><td class="border border-slate-300 p-1.5 text-center font-mono">${p.time}</td><td class="border border-slate-300 p-1.5">${p.floor}</td><td class="border border-slate-300 p-1.5">${p.caller} (${p.company || '-'})</td><td class="border border-slate-300 p-1.5">${p.target}</td><td class="border border-slate-300 p-1.5">${p.purpose}</td><td class="border border-slate-300 p-1.5 text-center">${p.status}</td></tr>
+            `).join('') : `<tr><td colspan="6" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada log panggilan</td></tr>`;
 
-            // Visitor Rpt
-            document.getElementById('rpt-visitor-body').innerHTML = visitors.length === 0 ? `<tr><td colspan="7" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data tamu.</td></tr>` :
-                visitors.map(v => `
-                    <tr>
-                        <td class="border border-slate-300 p-1.5 text-center font-mono">In: ${v.timeIn}<br>Out: ${v.timeOut || '-'}</td>
-                        <td class="border border-slate-300 p-1.5">${v.floor}</td>
-                        <td class="border border-slate-300 p-1.5 font-bold">${v.name} (${v.company})</td>
-                        <td class="border border-slate-300 p-1.5">${v.host}</td>
-                        <td class="border border-slate-300 p-1.5">${v.purpose}</td>
-                        <td class="border border-slate-300 p-1.5 text-center font-bold">${v.badge}</td>
-                        <td class="border border-slate-300 p-1.5 text-center">${v.status}</td>
-                    </tr>
-                `).join('');
+            document.getElementById('rpt-visitor-body').innerHTML = visitors.length ? visitors.map(v => `
+                <tr><td class="border border-slate-300 p-1.5 text-center font-mono">In: ${v.timeIn}<br>Out: ${v.timeOut || '-'}</td><td class="border border-slate-300 p-1.5">${v.floor}</td><td class="border border-slate-300 p-1.5 font-bold">${v.name} (${v.company})</td><td class="border border-slate-300 p-1.5">${v.host}</td><td class="border border-slate-300 p-1.5">${v.purpose}</td><td class="border border-slate-300 p-1.5 text-center">${v.badge}</td><td class="border border-slate-300 p-1.5 text-center">${v.status}</td></tr>
+            `).join('') : `<tr><td colspan="7" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada buku tamu</td></tr>`;
 
-            // Meeting Rpt
-            document.getElementById('rpt-meeting-body').innerHTML = meetings.length === 0 ? `<tr><td colspan="5" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada reservasi meeting.</td></tr>` :
-                meetings.map(m => `
-                    <tr>
-                        <td class="border border-slate-300 p-1.5 text-center font-mono">${m.date}<br>${m.timeStart} - ${m.timeEnd}</td>
-                        <td class="border border-slate-300 p-1.5">${m.room} (${m.floor})</td>
-                        <td class="border border-slate-300 p-1.5 font-bold">${m.agenda}</td>
-                        <td class="border border-slate-300 p-1.5">${m.host} (${m.division})</td>
-                        <td class="border border-slate-300 p-1.5">${m.notes || '-'}</td>
-                    </tr>
-                `).join('');
+            document.getElementById('rpt-meeting-body').innerHTML = meetings.length ? meetings.map(m => `
+                <tr><td class="border border-slate-300 p-1.5 text-center font-mono">${m.date}<br>${m.timeStart}-${m.timeEnd}</td><td class="border border-slate-300 p-1.5">${m.room} (${m.floor})</td><td class="border border-slate-300 p-1.5 font-bold">${m.agenda}</td><td class="border border-slate-300 p-1.5">${m.host} (${m.division})</td><td class="border border-slate-300 p-1.5">${m.notes || '-'}</td></tr>
+            `).join('') : `<tr><td colspan="5" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada jadwal meeting</td></tr>`;
 
-            // Shuttle Rpt
-            document.getElementById('rpt-notes-body').innerHTML = notes.length === 0 ? `<tr><td colspan="6" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada data shuttle.</td></tr>` :
-                notes.map(s => `
-                    <tr>
-                        <td class="border border-slate-300 p-1.5 text-center font-mono">${s.date}<br>${s.time}</td>
-                        <td class="border border-slate-300 p-1.5 font-bold">${s.passenger} (${s.division})</td>
-                        <td class="border border-slate-300 p-1.5 text-center font-bold">${s.count} Pax</td>
-                        <td class="border border-slate-300 p-1.5">${s.car}</td>
-                        <td class="border border-slate-300 p-1.5">${s.route}</td>
-                        <td class="border border-slate-300 p-1.5 text-center">${s.status}</td>
-                    </tr>
-                `).join('');
+            document.getElementById('rpt-notes-body').innerHTML = shuttle.length ? shuttle.map(s => `
+                <tr><td class="border border-slate-300 p-1.5 text-center font-mono">${s.date}<br>${s.time}</td><td class="border border-slate-300 p-1.5">${s.passenger} (${s.division})</td><td class="border border-slate-300 p-1.5 text-center font-bold">${s.count} Pax</td><td class="border border-slate-300 p-1.5">${s.car}</td><td class="border border-slate-300 p-1.5">${s.route}</td><td class="border border-slate-300 p-1.5 text-center">${s.status}</td></tr>
+            `).join('') : `<tr><td colspan="6" class="border border-slate-300 p-2 text-center text-slate-400">Tidak ada catatan shuttle</td></tr>`;
         }
 
-        // ================= SETTINGS & RESET =================
-        function openSettingsModal() {
-            document.getElementById('modal-settings').classList.remove('hidden');
-        }
-
-        async function saveSettings() {
-            appData.settings.officerName = document.getElementById('cfg-officer-name').value;
-            appData.settings.assignedFloor = document.getElementById('cfg-assigned-floor').value;
-            appData.settings.shift = document.getElementById('cfg-shift').value;
-
-            applySettingsToUI();
-            closeModal('modal-settings');
-            await saveToSupabase();
-            refreshAllUI();
-        }
-
-        function openResetModal() {
-            document.getElementById('modal-reset').classList.remove('hidden');
-        }
-
-        async function executeResetDay() {
-            appData.phoneLogs = [];
-            appData.visitorLogs = [];
-            appData.meetingLogs = [];
-            appData.shuttleLogs = [];
-            await saveToSupabase();
-            closeModal('modal-reset');
-            refreshAllUI();
-            alert('Data harian telah di-reset untuk hari baru.');
-            switchTab('phone');
-        }
-
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.add('hidden');
-        }
-
-        // ================= EXPORT & BACKUP =================
+        // ================= EXPORTS & UTILS =================
         function exportDataCSV() {
             let csvContent = "data:text/csv;charset=utf-8,";
-            csvContent += "KATEGORI,WAKTU/TANGGAL, LANTAI, NAMA/PEMANGGIL, INSTANSI/DIVISI, TUJUAN/PESAN, STATUS\r\n";
-
+            csvContent += "KATEGORI,WAKTU/TANGGAL, LANTAI, NAMA/PEMANGGIL, INSTANSI/TUJUAN, STATUS\r\n";
+            
             appData.phoneLogs.forEach(p => {
-                csvContent += `TELEPON,${p.time},${p.floor},"${p.caller}","${p.company}","${p.purpose}","${p.status}"\r\n`;
+                csvContent += `TELEPON,"${p.time}","${p.floor}","${p.caller}","${p.company || '-'}","${p.status}"\r\n`;
             });
             appData.visitorLogs.forEach(v => {
-                csvContent += `TAMU,${v.timeIn},${v.floor},"${v.name}","${v.company}","${v.purpose}","${v.status}"\r\n`;
+                csvContent += `TAMU,"${v.timeIn}","${v.floor}","${v.name}","${v.company}","${v.status}"\r\n`;
             });
             appData.meetingLogs.forEach(m => {
-                csvContent += `MEETING,${m.date} ${m.timeStart},${m.floor},"${m.host}","${m.division}","${m.agenda}","TERJADWAL"\r\n`;
+                csvContent += `MEETING,"${m.date} ${m.timeStart}","${m.floor}","${m.room}","${m.agenda}","Terjadwal"\r\n`;
             });
             appData.shuttleLogs.forEach(s => {
-                csvContent += `SHUTTLE,${s.date} ${s.time},Menara Karya,"${s.passenger}","${s.division}","${s.route}","${s.status}"\r\n`;
+                csvContent += `SHUTTLE,"${s.date} ${s.time}","Global","${s.passenger} (${s.count} Pax)","${s.route}","${s.status}"\r\n`;
             });
 
             const encodedUri = encodeURI(csvContent);
@@ -2064,18 +2011,53 @@
             document.body.removeChild(link);
         }
 
-        function exportWeeklyReportExcel() {
-            exportDataCSV(); // Exports comprehensive CSV dataset compatible with Excel
-        }
-
         function exportDataJSON() {
             const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appData, null, 2));
-            const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", `Backup_Receptionist_MenaraKarya_${getTodayDateString()}.json`);
-            document.body.appendChild(downloadAnchor);
-            downloadAnchor.click();
-            downloadAnchor.remove();
+            const dlAnchorElem = document.createElement('a');
+            dlAnchorElem.setAttribute("href", dataStr);
+            dlAnchorElem.setAttribute("download", `backup_receptionist_${getTodayDateString()}.json`);
+            dlAnchorElem.click();
+        }
+
+        function exportWeeklyReportExcel() {
+            exportDataCSV();
+        }
+
+        // Settings Modal
+        function openSettingsModal() {
+            document.getElementById('modal-settings').classList.remove('hidden');
+        }
+
+        async function saveSettings() {
+            appData.settings.officerName = document.getElementById('cfg-officer-name').value || 'Petugas FO';
+            appData.settings.assignedFloor = document.getElementById('cfg-assigned-floor').value;
+            appData.settings.shift = document.getElementById('cfg-shift').value;
+            
+            closeModal('modal-settings');
+            applySettingsToUI();
+            await saveToSupabase();
+            refreshAllUI();
+            alert('Pengaturan berhasil diperbarui!');
+        }
+
+        // Reset Day Modal
+        function openResetModal() {
+            document.getElementById('modal-reset').classList.remove('hidden');
+        }
+
+        async function executeResetDay() {
+            appData.phoneLogs = [];
+            appData.visitorLogs = [];
+            appData.meetingLogs = [];
+            appData.shuttleLogs = [];
+            closeModal('modal-reset');
+            await saveToSupabase();
+            refreshAllUI();
+            alert('Hari baru dimulai. Log harian telah direset.');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
         }
     </script>
 </body>
