@@ -997,8 +997,8 @@
     </div>
 
     <script>
-        // Supabase configuration using provided publishable key
-        const SUPABASE_URL = 'https://hUQblIzzMBFu0ZtkpeshPQ.supabase.co';
+        // Supabase configuration using provided publishable key & custom URL
+        const SUPABASE_URL = 'https://cxkfzghdhvwqyiseyrmw.supabase.co';
         const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_hUQblIzzMBFu0ZtkpeshPQ_2crxuAkA';
         
         let supabaseClient = null;
@@ -1008,7 +1008,11 @@
             if (window.supabase) {
                 supabaseClient = window.supabase.createClient(
                     SUPABASE_URL, 
-                    SUPABASE_PUBLISHABLE_KEY
+                    SUPABASE_PUBLISHABLE_KEY,
+                    {
+                        auth: { persistSession: false, autoRefreshToken: false },
+                        realtime: { params: { eventsPerSecond: 10 } }
+                    }
                 );
             }
         } catch (e) {
@@ -1137,14 +1141,20 @@
                     { event: '*', schema: 'public', table: 'reception_records' },
                     (payload) => {
                         console.log('Realtime change received:', payload);
+                        let updatedPayload = null;
                         if (payload.new && payload.new.payload) {
-                            const data = payload.new.payload;
-                            appData.phoneLogs = data.phoneLogs || [];
-                            appData.visitorLogs = data.visitorLogs || [];
-                            appData.meetingLogs = data.meetingLogs || [];
-                            appData.shuttleLogs = data.shuttleLogs || [];
-                            appData.historyLogs = data.historyLogs || [];
-                            appData.weeklyNotes = data.weeklyNotes || "";
+                            updatedPayload = payload.new.payload;
+                        } else if (payload.eventType === 'UPDATE' && payload.new) {
+                            updatedPayload = payload.new.payload;
+                        }
+
+                        if (updatedPayload) {
+                            appData.phoneLogs = updatedPayload.phoneLogs || [];
+                            appData.visitorLogs = updatedPayload.visitorLogs || [];
+                            appData.meetingLogs = updatedPayload.meetingLogs || [];
+                            appData.shuttleLogs = updatedPayload.shuttleLogs || [];
+                            appData.historyLogs = updatedPayload.historyLogs || [];
+                            appData.weeklyNotes = updatedPayload.weeklyNotes || "";
                             
                             refreshAllUI();
                             showSyncToast("Data diperbarui secara realtime dari device lain!");
@@ -1186,7 +1196,7 @@
                 await supabaseClient.from('reception_settings').upsert({
                     id: 1,
                     payload: appData.settings,
-                    updated_at: new Date()
+                    updated_at: new Date().toISOString()
                 }, { onConflict: 'id' });
 
                 // Upsert records (triggers realtime event for other clients)
@@ -1200,7 +1210,7 @@
                         historyLogs: appData.historyLogs,
                         weeklyNotes: appData.weeklyNotes
                     },
-                    updated_at: new Date()
+                    updated_at: new Date().toISOString()
                 }, { onConflict: 'id' });
 
                 if (showStatus) updateCloudStatus('connected', 'Realtime Active');
@@ -1288,7 +1298,6 @@
             refreshAllUI();
         }
 
-        // Navigation Tabs Controller
         function switchTab(tabId) {
             currentActiveTab = tabId;
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
@@ -1320,7 +1329,6 @@
             updateMetricsSummary();
         }
 
-        // ================= METRICS & COUNTERS =================
         function updateMetricsSummary() {
             const filterFloor = appData.activeFloorFilter;
             
@@ -1351,7 +1359,6 @@
             document.getElementById('rpt-floor').innerText = filterFloor === 'ALL' ? 'Semua Lantai (Global Menara Karya)' : filterFloor;
         }
 
-        // ================= PHONE LOGS CRUD =================
         function openPhoneModal(editId = null) {
             document.getElementById('form-phone').reset();
             document.getElementById('phone-id').value = '';
@@ -1453,7 +1460,6 @@
             `).join('');
         }
 
-        // ================= VISITOR LOGS CRUD =================
         function openVisitorModal(editId = null) {
             document.getElementById('form-visitor').reset();
             document.getElementById('visitor-id').value = '';
@@ -1566,7 +1572,6 @@
             `).join('');
         }
 
-        // ================= MEETING LOGS CRUD =================
         function openMeetingModal(editId = null) {
             document.getElementById('form-meeting').reset();
             document.getElementById('meeting-id').value = '';
@@ -1673,7 +1678,6 @@
             `).join('');
         }
 
-        // ================= SHUTTLE LOGS CRUD =================
         function openNoteModal(editId = null) {
             document.getElementById('form-note').reset();
             document.getElementById('note-id').value = '';
@@ -1790,7 +1794,6 @@
             `).join('');
         }
 
-        // ================= SETTINGS & ARCHIVE =================
         function openSettingsModal() {
             document.getElementById('modal-settings').classList.remove('hidden');
         }
@@ -1886,7 +1889,6 @@
             }
         }
 
-        // ================= WEEKLY & REPORT PREVIEW =================
         function renderWeeklyReport() {
             const totalVisitors = appData.historyLogs.reduce((acc, h) => acc + h.summary.visitors, 0) + appData.visitorLogs.length;
             const totalCalls = appData.historyLogs.reduce((acc, h) => acc + h.summary.phones, 0) + appData.phoneLogs.length;
@@ -2024,7 +2026,6 @@
             `).join('') : `<tr><td colspan="6" class="border border-slate-300 p-3 text-center text-slate-400">Tidak ada penggunaan shuttle</td></tr>`;
         }
 
-        // ================= EXPORT & UTILS =================
         function closeModal(modalId) {
             document.getElementById(modalId).classList.add('hidden');
         }
