@@ -112,6 +112,12 @@
                             <i class="fa-solid fa-download text-slate-500"></i>
                             <span class="hidden md:inline">Backup</span>
                         </button>
+                        <!-- FITUR RESTORE (IMPOR JSON) -->
+                        <button onclick="document.getElementById('import-json-file').click()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-medium px-2.5 py-2 rounded-lg transition-colors flex items-center space-x-1" title="Restore / Impor File JSON">
+                            <i class="fa-solid fa-upload text-slate-500"></i>
+                            <span class="hidden md:inline">Restore</span>
+                        </button>
+                        <input type="file" id="import-json-file" accept=".json" onchange="importDataJSON(event)" class="hidden">
                     </div>
 
                     <!-- Print / View Report Button -->
@@ -2240,6 +2246,47 @@
             document.body.appendChild(downloadAnchor);
             downloadAnchor.click();
             downloadAnchor.remove();
+        }
+
+        // FITUR RESTORE (IMPOR JSON)
+        function importDataJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const parsedData = JSON.parse(e.target.result);
+                    
+                    // Validasi struktur data dasar
+                    if (parsedData && typeof parsedData === 'object') {
+                        appData = {
+                            settings: parsedData.settings || appData.settings,
+                            activeFloorFilter: parsedData.activeFloorFilter || "ALL",
+                            phoneLogs: parsedData.phoneLogs || [],
+                            visitorLogs: parsedData.visitorLogs || [],
+                            meetingLogs: parsedData.meetingLogs || [],
+                            shuttleLogs: parsedData.shuttleLogs || [],
+                            historyLogs: parsedData.historyLogs || [],
+                            weeklyNotes: parsedData.weeklyNotes || ""
+                        };
+
+                        applySettingsToUI();
+                        await saveToSupabase();
+                        refreshAllUI();
+                        showSyncToast("Data berhasil direstore dari file JSON!");
+                    } else {
+                        alert("Format file JSON tidak valid.");
+                    }
+                } catch (err) {
+                    console.error("Gagal memparsing file JSON:", err);
+                    alert("Terjadi kesalahan saat membaca file JSON.");
+                } finally {
+                    // Reset input file agar bisa mengunggah file yang sama kembali jika diperlukan
+                    event.target.value = '';
+                }
+            };
+            reader.readAsText(file);
         }
     </script>
 </body>
